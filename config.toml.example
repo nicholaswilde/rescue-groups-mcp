@@ -1,0 +1,25 @@
+# Rescue Groups MCP Configuration
+# Rename this file to 'config.toml' to use it.
+
+# ------------------------------------------------------------------
+# AUTHENTICATION
+# ------------------------------------------------------------------
+# Your RescueGroups.org API Key.
+# See https://userguide.rescuegroups.org/spaces/APIDG/pages/8192120/API+Developers+Guide+Home
+# Note: You can omit this line if you prefer to use the 
+# RESCUE_GROUPS_API_KEY environment variable instead.
+api_key = "YOUR_API_KEY_HERE"
+
+# ------------------------------------------------------------------
+# SEARCH DEFAULTS
+# ------------------------------------------------------------------
+# The postal code to center the search around.
+postal_code = "90210"
+
+# Search radius in miles.
+# Default is 50 if not specified.
+miles = 50
+
+# Species to search for.
+# Common options: "dogs", "cats", "rabbits", "birds", "smallandfurry"
+species = "dogs"
