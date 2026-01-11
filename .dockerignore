@@ -1,0 +1,8 @@
+target/
+**/*.rs.bk
+Cargo.lock
+config.toml
+.git/
+.github/
+.vscode/
+.idea/

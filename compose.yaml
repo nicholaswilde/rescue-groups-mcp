@@ -1,0 +1,25 @@
+---
+name: rescue-groups-mcp
+
+services:
+  rescue-groups-mcp:
+    image: rescue-groups-mcp:latest
+    container_name: rescue-groups-mcp
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    stdin_open: true # Keep stdin open for MCP communication
+    tty: true        # Allocate a pseudo-TTY
+    environment:
+      # Required: Rescue Groups API Key
+      RESCUE_GROUPS_API_KEY: "your_api_key_here"
+      # Optional: HTTP Mode (if running as a server)
+      # MCP_AUTH_TOKEN: "your_auth_token"
+    # ports:
+    #   - "8080:8080" # Uncomment for HTTP mode
+    volumes:
+      # Mount config file if preferred over env vars
+      - ./config.toml:/app/config.toml
+    restart: unless-stopped
+    # Command to run in HTTP mode (uncomment to use)
+    # command: http --port 8080 --auth-token your_auth_token
