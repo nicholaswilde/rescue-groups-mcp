@@ -26,6 +26,9 @@ use tokio::sync::{mpsc, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 
+type SessionSender = mpsc::UnboundedSender<Result<Event, Infallible>>;
+type SessionsMap = Arc<RwLock<HashMap<String, SessionSender>>>;
+
 // ... (rest of imports if any)
 
 // =========================================================================
@@ -708,7 +711,7 @@ struct JsonRpcRequest {
 struct AppState {
     settings: Settings,
     auth_token: Option<String>,
-    sessions: Arc<RwLock<HashMap<String, mpsc::UnboundedSender<Result<Event, Infallible>>>>>,
+    sessions: SessionsMap,
 }
 
 #[derive(Deserialize)]
