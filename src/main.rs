@@ -30,6 +30,10 @@ struct Cli {
     #[arg(long, default_value = "config.toml")]
     config: String,
 
+    /// Output raw JSON instead of formatted text
+    #[arg(long, global = true)]
+    json: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -81,7 +85,7 @@ struct Settings {
     cache: Arc<moka::future::Cache<String, Value>>,
 }
 
-fn merge_configuration(cli: Cli) -> Result<Settings, Box<dyn Error>> {
+fn merge_configuration(cli: &Cli) -> Result<Settings, Box<dyn Error>> {
     let config_path = Path::new(&cli.config);
 
     let file_config: Option<ConfigFile> = if config_path.exists() {
@@ -102,6 +106,7 @@ fn merge_configuration(cli: Cli) -> Result<Settings, Box<dyn Error>> {
 
     let api_key = cli
         .api_key
+        .clone()
         .or(file_config.as_ref().and_then(|c| c.api_key.clone()))
         .ok_or("API Key is missing! Set RESCUE_GROUPS_API_KEY or use config.toml")?;
 
@@ -399,19 +404,14 @@ fn format_org_results(data: &Value) -> Result<String, Box<dyn Error>> {
     Ok(results.join("\n\n---\n\n"))
 }
 
-async fn list_breeds(settings: &Settings, args: SpeciesArgs) -> Result<String, Box<dyn Error>> {
-    let url = format!(
-        "{}/public/animals/species/{}/breeds",
-        settings.base_url, args.species
-    );
-    let data = fetch_with_cache(settings, &url, "GET", None).await?;
+fn format_breed_results(data: &Value, species: &str) -> Result<String, Box<dyn Error>> {
     let breeds = data
         .get("data")
         .and_then(|d| d.as_array())
         .ok_or("No breeds found")?;
 
     if breeds.is_empty() {
-        return Ok(format!("No breeds found for species '{}'.", args.species));
+        return Ok(format!("No breeds found for species '{}'.", species));
     }
 
     let mut breed_names: Vec<String> = breeds
@@ -423,64 +423,65 @@ async fn list_breeds(settings: &Settings, args: SpeciesArgs) -> Result<String, B
 
     Ok(format!(
         "### Breeds for {}\n\n{}",
-        args.species,
+        species,
         breed_names.join("\n")
     ))
 }
 
-async fn list_species(settings: &Settings) -> Result<String, Box<dyn Error>> {
+fn print_output<F>(result: Result<Value, Box<dyn Error>>, json_mode: bool, formatter: F)
+where
+    F: Fn(&Value) -> Result<String, Box<dyn Error>>,
+{
+    match result {
+        Ok(value) => {
+            if json_mode {
+                println!("{}", serde_json::to_string_pretty(&value).unwrap());
+            } else {
+                match formatter(&value) {
+                    Ok(text) => println!("{}", text),
+                    Err(e) => eprintln!("Error formatting output: {}", e),
+                }
+            }
+        }
+        Err(e) => eprintln!("Error: {}", e),
+    }
+}
 
+async fn list_breeds(settings: &Settings, args: SpeciesArgs) -> Result<Value, Box<dyn Error>> {
+    let url = format!(
+        "{}/public/animals/species/{}/breeds",
+        settings.base_url, args.species
+    );
+    fetch_with_cache(settings, &url, "GET", None).await
+}
+
+async fn list_species(settings: &Settings) -> Result<Value, Box<dyn Error>> {
     let url = format!("{}/public/animals/species", settings.base_url);
-
-    let data = fetch_with_cache(settings, &url, "GET", None).await?;
-
-    format_species_results(&data)
-
+    fetch_with_cache(settings, &url, "GET", None).await
 }
 
-
-
-async fn list_metadata(settings: &Settings, args: MetadataArgs) -> Result<String, Box<dyn Error>> {
-
+async fn list_metadata(settings: &Settings, args: MetadataArgs) -> Result<Value, Box<dyn Error>> {
     let url = format!("{}/public/animals/{}", settings.base_url, args.metadata_type);
-
-    let data = fetch_with_cache(settings, &url, "GET", None).await?;
-
-    format_metadata_results(&data, &args.metadata_type)
-
+    fetch_with_cache(settings, &url, "GET", None).await
 }
 
-
-
-async fn list_animals(settings: &Settings) -> Result<String, Box<dyn Error>> {
-
-
+async fn list_animals(settings: &Settings) -> Result<Value, Box<dyn Error>> {
     let url = format!("{}/public/animals", settings.base_url);
-    let data = fetch_with_cache(settings, &url, "GET", None).await?;
-    format_animal_results(&data)
+    fetch_with_cache(settings, &url, "GET", None).await
 }
 
 async fn get_animal_details(
     settings: &Settings,
     args: AnimalIdArgs,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<Value, Box<dyn Error>> {
     let url = format!("{}/public/animals/{}", settings.base_url, args.animal_id);
-    let data = match fetch_with_cache(settings, &url, "GET", None).await {
-        Ok(d) => d,
-        Err(e) if e.to_string() == "Not Found" => {
-            return Ok(format!("Animal with ID {} not found.", args.animal_id));
-        }
-        Err(e) => return Err(e),
-    };
-    let animal = data.get("data").ok_or("No animal data found")?;
-
-    Ok(format_single_animal(animal))
+    fetch_with_cache(settings, &url, "GET", None).await
 }
 
 async fn search_organizations(
     settings: &Settings,
     args: OrgSearchArgs,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<Value, Box<dyn Error>> {
     let url = format!("{}/public/orgs/search", settings.base_url);
     let miles = args.miles.unwrap_or(settings.default_miles);
     let postal_code = args
@@ -497,47 +498,26 @@ async fn search_organizations(
         }
     });
 
-    let data = fetch_with_cache(settings, &url, "POST", Some(body)).await?;
-    format_org_results(&data)
+    fetch_with_cache(settings, &url, "POST", Some(body)).await
 }
 
 async fn get_organization_details(
     settings: &Settings,
     args: OrgIdArgs,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<Value, Box<dyn Error>> {
     let url = format!("{}/public/orgs/{}", settings.base_url, args.org_id);
-
-    let data = match fetch_with_cache(settings, &url, "GET", None).await {
-        Ok(d) => d,
-        Err(e) if e.to_string() == "Not Found" => {
-            return Ok(format!("Organization with ID {} not found.", args.org_id));
-        }
-        Err(e) => return Err(e),
-    };
-    let org = data.get("data").ok_or("No organization data found")?;
-
-    Ok(format_single_org(org))
+    fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn list_org_animals(settings: &Settings, args: OrgIdArgs) -> Result<String, Box<dyn Error>> {
+async fn list_org_animals(settings: &Settings, args: OrgIdArgs) -> Result<Value, Box<dyn Error>> {
     let url = format!(
         "{}/public/orgs/{}/animals/search/available",
         settings.base_url, args.org_id
     );
-    let data = match fetch_with_cache(settings, &url, "GET", None).await {
-        Ok(d) => d,
-        Err(e) if e.to_string() == "Not Found" => {
-            return Ok(format!(
-                "Organization with ID {} not found or has no available animals.",
-                args.org_id
-            ));
-        }
-        Err(e) => return Err(e),
-    };
-    format_animal_results(&data)
+    fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn fetch_pets(settings: &Settings, args: ToolArgs) -> Result<String, Box<dyn Error>> {
+async fn fetch_pets(settings: &Settings, args: ToolArgs) -> Result<Value, Box<dyn Error>> {
     // Merge Tool Args with Server Defaults
     // This is the "Dynamic Lookup" logic:
     // 1. If AI sends a postal_code, use it.
@@ -640,28 +620,13 @@ async fn fetch_pets(settings: &Settings, args: ToolArgs) -> Result<String, Box<d
 
     let body = json!({ "data": data_obj });
 
-    let data = fetch_with_cache(settings, &url, "POST", Some(body)).await?;
-
-    
-    let animals = data
-        .get("data")
-        .and_then(|d| d.as_array())
-        .ok_or("No data found")?;
-
-    if animals.is_empty() {
-        return Ok(format!(
-            "No adoptable {} found within {} miles of {}.",
-            species, miles, postal_code
-        ));
-    }
-
-    format_animal_results(&data)
+    fetch_with_cache(settings, &url, "POST", Some(body)).await
 }
 
 async fn fetch_adopted_pets(
     settings: &Settings,
     args: AdoptedAnimalsArgs,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<Value, Box<dyn Error>> {
     let miles = args.miles.unwrap_or(settings.default_miles);
     let species = args.species.as_deref().unwrap_or(&settings.default_species);
     let postal_code = args
@@ -684,24 +649,7 @@ async fn fetch_adopted_pets(
         }
     });
 
-    let data = match fetch_with_cache(settings, &url, "POST", Some(body)).await {
-        Ok(d) => d,
-        Err(e) => return Err(format!("Could not fetch adopted pets (endpoint might not exist): {}", e).into()),
-    };
-
-    let animals = data
-        .get("data")
-        .and_then(|d| d.as_array())
-        .ok_or("No data found")?;
-
-    if animals.is_empty() {
-        return Ok(format!(
-            "No recently adopted {} found within {} miles of {}.",
-            species, miles, postal_code
-        ));
-    }
-
-    format_animal_results(&data)
+    fetch_with_cache(settings, &url, "POST", Some(body)).await
 }
 
 // =========================================================================
@@ -723,7 +671,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     // Clone command to use after merge_configuration (which consumes cli)
     let command = cli.command.clone();
-    let settings = merge_configuration(cli)?;
+    let settings = merge_configuration(&cli)?;
 
     match command {
         Some(Commands::Server) | None => {
@@ -761,58 +709,75 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(Commands::Search(args)) => {
-            match fetch_pets(&settings, args).await {
-                Ok(result) => println!("{}", result),
-                Err(e) => eprintln!("Error: {}", e),
-            }
+            print_output(
+                fetch_pets(&settings, args).await,
+                cli.json,
+                |v| format_animal_results(v),
+            );
         }
         Some(Commands::ListSpecies) => {
-            match list_species(&settings).await {
-                Ok(result) => println!("{}", result),
-                Err(e) => eprintln!("Error: {}", e),
-            }
+            print_output(
+                list_species(&settings).await,
+                cli.json,
+                |v| format_species_results(v),
+            );
         }
         Some(Commands::GetAnimal(args)) => {
-            match get_animal_details(&settings, args).await {
-                Ok(result) => println!("{}", result),
-                Err(e) => eprintln!("Error: {}", e),
-            }
+            print_output(
+                get_animal_details(&settings, args).await,
+                cli.json,
+                |v| {
+                    let animal = v.get("data").ok_or("No animal data found")?;
+                    Ok(format_single_animal(animal))
+                },
+            );
         }
         Some(Commands::SearchOrgs(args)) => {
-            match search_organizations(&settings, args).await {
-                Ok(result) => println!("{}", result),
-                Err(e) => eprintln!("Error: {}", e),
-            }
+            print_output(
+                search_organizations(&settings, args).await,
+                cli.json,
+                |v| format_org_results(v),
+            );
         }
         Some(Commands::GetOrg(args)) => {
-            match get_organization_details(&settings, args).await {
-                Ok(result) => println!("{}", result),
-                Err(e) => eprintln!("Error: {}", e),
-            }
+            print_output(
+                get_organization_details(&settings, args).await,
+                cli.json,
+                |v| {
+                    let org = v.get("data").ok_or("No organization data found")?;
+                    Ok(format_single_org(org))
+                },
+            );
         }
         Some(Commands::ListOrgAnimals(args)) => {
-            match list_org_animals(&settings, args).await {
-                Ok(result) => println!("{}", result),
-                Err(e) => eprintln!("Error: {}", e),
-            }
+            print_output(
+                list_org_animals(&settings, args).await,
+                cli.json,
+                |v| format_animal_results(v),
+            );
         }
         Some(Commands::ListAdopted(args)) => {
-            match fetch_adopted_pets(&settings, args).await {
-                Ok(result) => println!("{}", result),
-                Err(e) => eprintln!("Error: {}", e),
-            }
+            print_output(
+                fetch_adopted_pets(&settings, args).await,
+                cli.json,
+                |v| format_animal_results(v),
+            );
         }
         Some(Commands::ListBreeds(args)) => {
-            match list_breeds(&settings, args).await {
-                Ok(result) => println!("{}", result),
-                Err(e) => eprintln!("Error: {}", e),
-            }
+            let species = args.species.clone();
+            print_output(
+                list_breeds(&settings, args).await,
+                cli.json,
+                |v| format_breed_results(v, &species),
+            );
         }
         Some(Commands::ListMetadata(args)) => {
-            match list_metadata(&settings, args).await {
-                Ok(result) => println!("{}", result),
-                Err(e) => eprintln!("Error: {}", e),
-            }
+            let metadata_type = args.metadata_type.clone();
+            print_output(
+                list_metadata(&settings, args).await,
+                cli.json,
+                |v| format_metadata_results(v, &metadata_type),
+            );
         }
         Some(Commands::Generate(args)) => {
             let mut cmd = Cli::command();
@@ -981,20 +946,18 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                 let name = params["name"].as_str().unwrap_or("");
                 match name {
                     "list_animals" => match list_animals(settings).await {
-                        Ok(content) => {
-                            json!({ "content": [{ "type": "text", "text": content }] })
-                        }
-                        Err(e) => {
-                            json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                        }
+                        Ok(data) => match format_animal_results(&data) {
+                            Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
+                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                        },
+                        Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
                     },
                     "list_species" => match list_species(settings).await {
-                        Ok(content) => {
-                            json!({ "content": [{ "type": "text", "text": content }] })
-                        }
-                        Err(e) => {
-                            json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                        }
+                        Ok(data) => match format_species_results(&data) {
+                            Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
+                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                        },
+                        Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
                     },
                     "list_metadata" => {
                         let args: MetadataArgs = serde_json::from_value(params["arguments"].clone())
@@ -1002,13 +965,12 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                                 metadata_type: "colors".to_string(),
                             });
 
-                        match list_metadata(settings, args).await {
-                            Ok(content) => {
-                                json!({ "content": [{ "type": "text", "text": content }] })
-                            }
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
+                        match list_metadata(settings, args.clone()).await {
+                            Ok(data) => match format_metadata_results(&data, &args.metadata_type) {
+                                Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
+                                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                            },
+                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
                         }
                     },
                     "list_breeds" => {
@@ -1019,13 +981,12 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                             species: settings.default_species.clone(),
                         });
 
-                        match list_breeds(settings, args).await {
-                            Ok(content) => {
-                                json!({ "content": [{ "type": "text", "text": content }] })
-                            }
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
+                        match list_breeds(settings, args.clone()).await {
+                            Ok(data) => match format_breed_results(&data, &args.species) {
+                                Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
+                                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                            },
+                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
                         }
                     }
                     "get_animal_details" => {
@@ -1037,12 +998,14 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                         });
 
                         match get_animal_details(settings, args).await {
-                            Ok(content) => {
-                                json!({ "content": [{ "type": "text", "text": content }] })
-                            }
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
+                            Ok(data) => {
+                                let animal = data.get("data").ok_or("No animal data found");
+                                match animal {
+                                    Ok(a) => json!({ "content": [{ "type": "text", "text": format_single_animal(a) }] }),
+                                    Err(_) => json!({ "content": [{ "type": "text", "text": "Animal not found" }], "isError": true }),
+                                }
+                            },
+                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
                         }
                     }
                     "search_organizations" => {
@@ -1055,12 +1018,11 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                         });
 
                         match search_organizations(settings, args).await {
-                            Ok(content) => {
-                                json!({ "content": [{ "type": "text", "text": content }] })
-                            }
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
+                            Ok(data) => match format_org_results(&data) {
+                                Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
+                                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                            },
+                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
                         }
                     }
                     "get_organization_details" => {
@@ -1072,12 +1034,14 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                         });
 
                         match get_organization_details(settings, args).await {
-                            Ok(content) => {
-                                json!({ "content": [{ "type": "text", "text": content }] })
-                            }
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
+                            Ok(data) => {
+                                let org = data.get("data").ok_or("No organization data found");
+                                match org {
+                                    Ok(o) => json!({ "content": [{ "type": "text", "text": format_single_org(o) }] }),
+                                    Err(_) => json!({ "content": [{ "type": "text", "text": "Organization not found" }], "isError": true }),
+                                }
+                            },
+                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
                         }
                     }
                     "list_org_animals" => {
@@ -1089,12 +1053,11 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                         });
 
                         match list_org_animals(settings, args).await {
-                            Ok(content) => {
-                                json!({ "content": [{ "type": "text", "text": content }] })
-                            }
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
+                            Ok(data) => match format_animal_results(&data) {
+                                Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
+                                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                            },
+                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
                         }
                     }
                     "search_adoptable_pets" => {
@@ -1117,12 +1080,11 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                         });
 
                         match fetch_pets(settings, args).await {
-                            Ok(content) => {
-                                json!({ "content": [{ "type": "text", "text": content }] })
-                            }
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
+                            Ok(data) => match format_animal_results(&data) {
+                                Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
+                                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                            },
+                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
                         }
                     }
                     "list_adopted_animals" => {
@@ -1136,12 +1098,11 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                         });
 
                         match fetch_adopted_pets(settings, args).await {
-                            Ok(content) => {
-                                json!({ "content": [{ "type": "text", "text": content }] })
-                            }
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
+                            Ok(data) => match format_animal_results(&data) {
+                                Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
+                                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                            },
+                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
                         }
                     }
                     _ => {
@@ -1171,8 +1132,9 @@ mod tests {
             api_key: Some("test_key".to_string()),
             config: "non_existent.toml".to_string(),
             command: None,
+            json: false,
         };
-        let settings = merge_configuration(cli).unwrap();
+        let settings = merge_configuration(&cli).unwrap();
         assert_eq!(settings.api_key, "test_key");
         assert_eq!(settings.default_postal_code, "90210");
         assert_eq!(settings.default_miles, 50);
@@ -1257,7 +1219,8 @@ mod tests {
         let args = SpeciesArgs {
             species: "dogs".to_string(),
         };
-        let result = list_breeds(&settings, args).await.unwrap();
+        let value = list_breeds(&settings, args).await.unwrap();
+        let result = format_breed_results(&value, "dogs").unwrap();
 
         assert!(result.contains("### Breeds for dogs"));
         assert!(result.contains("Labrador"));
@@ -1296,7 +1259,8 @@ mod tests {
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
-        let result = list_animals(&settings).await.unwrap();
+        let value = list_animals(&settings).await.unwrap();
+        let result = format_animal_results(&value).unwrap();
         assert!(result.contains("### [Buddy](https://example.com/buddy)"));
     }
 
@@ -1338,7 +1302,9 @@ mod tests {
         let args = AnimalIdArgs {
             animal_id: "123".to_string(),
         };
-        let result = get_animal_details(&settings, args).await.unwrap();
+        let value = get_animal_details(&settings, args).await.unwrap();
+        let animal = value.get("data").unwrap();
+        let result = format_single_animal(animal);
         assert!(result.contains("# Buddy"));
         assert!(result.contains("A friendly dog."));
     }
@@ -1382,7 +1348,8 @@ mod tests {
             postal_code: None,
             miles: None,
         };
-        let result = search_organizations(&settings, args).await.unwrap();
+        let value = search_organizations(&settings, args).await.unwrap();
+        let result = format_org_results(&value).unwrap();
         assert!(result.contains("### Local Rescue"));
         assert!(result.contains("**Location:** Los Angeles, CA"));
     }
@@ -1428,7 +1395,9 @@ mod tests {
         let args = OrgIdArgs {
             org_id: "1".to_string(),
         };
-        let result = get_organization_details(&settings, args).await.unwrap();
+        let value = get_organization_details(&settings, args).await.unwrap();
+        let org = value.get("data").unwrap();
+        let result = format_single_org(org);
         assert!(result.contains("# Local Rescue"));
         assert!(result.contains("A great shelter."));
         assert!(result.contains("123 Main St"));
@@ -1469,7 +1438,8 @@ mod tests {
         let args = OrgIdArgs {
             org_id: "1".to_string(),
         };
-        let result = list_org_animals(&settings, args).await.unwrap();
+        let value = list_org_animals(&settings, args).await.unwrap();
+        let result = format_animal_results(&value).unwrap();
         assert!(result.contains("### [OrgPet](https://example.com/orgpet)"));
     }
 
@@ -1500,7 +1470,8 @@ mod tests {
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
-        let result = list_species(&settings).await.unwrap();
+        let value = list_species(&settings).await.unwrap();
+        let result = format_species_results(&value).unwrap();
         assert!(result.contains("### Supported Species"));
         assert!(result.contains("Dog"));
         assert!(result.contains("Cat"));
@@ -1533,7 +1504,8 @@ mod tests {
         };
 
         let args = MetadataArgs { metadata_type: "colors".to_string() };
-        let result = list_metadata(&settings, args).await.unwrap();
+        let value = list_metadata(&settings, args).await.unwrap();
+        let result = format_metadata_results(&value, "colors").unwrap();
         assert!(result.contains("### Supported colors"));
         assert!(result.contains("Black"));
         assert!(result.contains("White"));
@@ -1605,7 +1577,8 @@ mod tests {
             sort_by: None,
         };
 
-        let result = fetch_pets(&settings, args).await.unwrap();
+        let value = fetch_pets(&settings, args).await.unwrap();
+        let result = format_animal_results(&value).unwrap();
         assert!(result.contains("FilteredPet"));
         m.assert_async().await;
     }
@@ -1681,7 +1654,8 @@ mod tests {
             sort_by: None,
         };
 
-        let result = fetch_pets(&settings, args).await.unwrap();
+        let value = fetch_pets(&settings, args).await.unwrap();
+        let result = format_animal_results(&value).unwrap();
         assert!(result.contains("GoodBoy"));
         m.assert_async().await;
     }
@@ -1733,7 +1707,8 @@ mod tests {
             sort_by: Some("Newest".to_string()),
         };
 
-        let result = fetch_pets(&settings, args).await.unwrap();
+        let value = fetch_pets(&settings, args).await.unwrap();
+        let result = format_animal_results(&value).unwrap();
         assert!(result.contains("NewestPet"));
         m.assert_async().await;
     }
@@ -1775,7 +1750,8 @@ mod tests {
             species: Some("dogs".to_string()),
         };
 
-        let result = fetch_adopted_pets(&settings, args).await.unwrap();
+        let value = fetch_adopted_pets(&settings, args).await.unwrap();
+        let result = format_animal_results(&value).unwrap();
         assert!(result.contains("HappyTail"));
         m.assert_async().await;
     }
