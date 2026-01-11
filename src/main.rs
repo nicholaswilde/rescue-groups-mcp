@@ -1,21 +1,27 @@
 use axum::{
-    extract::{State, Json},
+    extract::{State, Json, Query},
     http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-    routing::post,
+    response::{sse::{Event, KeepAlive, Sse}, IntoResponse},
+    routing::{get, post},
     Router,
 };
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use clap_mangen::Man;
+use futures::stream::Stream;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::convert::Infallible;
 use std::error::Error;
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
+use tokio::sync::{mpsc, RwLock};
+use tokio_stream::wrappers::UnboundedReceiverStream;
+use uuid::Uuid;
 
 // ... (rest of imports if any)
 
@@ -695,6 +701,12 @@ struct JsonRpcRequest {
 struct AppState {
     settings: Settings,
     auth_token: Option<String>,
+    sessions: Arc<RwLock<HashMap<String, mpsc::UnboundedSender<Result<Event, Infallible>>>>>,
+}
+
+#[derive(Deserialize)]
+struct MessageParams {
+    session_id: String,
 }
 
 async fn http_handler(
@@ -725,6 +737,45 @@ async fn http_handler(
     } else {
         StatusCode::NO_CONTENT.into_response()
     }
+}
+
+async fn sse_handler(
+    State(state): State<Arc<AppState>>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    let session_id = Uuid::new_v4().to_string();
+
+    // Send initial endpoint event
+    let endpoint_url = format!("/message?session_id={}", session_id);
+    let _ = tx.send(Ok(Event::default().event("endpoint").data(endpoint_url)));
+
+    state.sessions.write().await.insert(session_id.clone(), tx);
+
+    let stream = UnboundedReceiverStream::new(rx);
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+async fn message_handler(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<MessageParams>,
+    Json(req): Json<JsonRpcRequest>,
+) -> impl IntoResponse {
+    let response = process_mcp_request(req, &state.settings).await;
+
+    if let Some(id) = response.0 {
+        let output = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": response.1
+        });
+        
+        // Find session and send response via SSE
+        if let Some(tx) = state.sessions.read().await.get(&params.session_id) {
+             let _ = tx.send(Ok(Event::default().event("message").data(output.to_string())));
+        }
+    }
+
+    StatusCode::ACCEPTED
 }
 
 #[tokio::main]
@@ -773,14 +824,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let app_state = Arc::new(AppState {
                 settings: settings.clone(),
                 auth_token: args.auth_token,
+                sessions: Arc::new(RwLock::new(HashMap::new())),
             });
 
             let app = Router::new()
                 .route("/", post(http_handler))
+                .route("/sse", get(sse_handler))
+                .route("/message", post(message_handler))
                 .with_state(app_state);
 
             let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
-            eprintln!("RescueGroups MCP Server running (HTTP) on {}", addr);
+            eprintln!("RescueGroups MCP Server running (HTTP + SSE) on {}", addr);
             
             let listener = tokio::net::TcpListener::bind(addr).await?;
             axum::serve(listener, app).await?;

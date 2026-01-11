@@ -17,6 +17,9 @@ serde_yaml = "0.9" # Add this for YAML support
 moka = { version = "0.12", features = ["future"] }
 axum = "0.8.8"
 tower = "0.5.2"
+tokio-stream = "0.1.18"
+futures = "0.3.31"
+uuid = { version = "1.19.0", features = ["v4"] }
 
 [dev-dependencies]
 mockito = "1.4"
