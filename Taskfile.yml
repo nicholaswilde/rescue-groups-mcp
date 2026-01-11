@@ -6,6 +6,7 @@ tasks:
     desc: Run tests
     cmds:
       - cargo test --profile ci
+      - cargo fmt --all --check
   init:
     desc: Initialize
     preconditions:
