@@ -23,6 +23,8 @@ You will need to request an [API key][1] from the group.
     - **Filters**: `good_with_children`, `good_with_dogs`, `good_with_cats`, `house_trained`, `special_needs`.
     - **Sorting**: Sort by `Newest`, `Distance`, or `Random`.
 - `list_animals`: Browse the most recent adoptable animals available globally.
+- `get_contact_info`: Get the primary contact method (email, phone, organization) for a specific animal.
+- `compare_animals`: Compare up to 5 animals side-by-side (Age, Breed, Size, Compatibility).
 - `list_adopted_animals`: List recently adopted animals (Success Stories) to see happy endings near you.
 - `get_animal_details`: Fetch a complete profile for a specific animal (description, sex, age, size, and photos).
 - `list_species`: List all animal species supported by the API (e.g., Dog, Cat, Horse).
@@ -56,6 +58,27 @@ The application can be used directly from the command line for quick searches an
 # Search for cats near 90210
 ./target/release/rescue-groups-mcp search --species cats --postal-code 90210
 
+# Get contact info for an animal
+./target/release/rescue-groups-mcp get-contact --animal-id 1234
+
+# Compare multiple animals by ID
+./target/release/rescue-groups-mcp compare --animal-ids 1234,5678
+
+# Search for organizations near 90210
+./target/release/rescue-groups-mcp search-orgs --postal-code 90210 --miles 25
+
+# List animals at a specific organization
+./target/release/rescue-groups-mcp list-org-animals --org-id 123
+
+# List recently adopted dogs (Success Stories)
+./target/release/rescue-groups-mcp list-adopted --species dogs --postal-code 90210
+
+# Discover breeds for cats
+./target/release/rescue-groups-mcp list-breeds --species cats
+
+# List valid colors metadata
+./target/release/rescue-groups-mcp list-metadata --metadata-type colors
+
 # Get raw JSON output (useful for scripting with jq)
 ./target/release/rescue-groups-mcp search --species cats --json | jq .
 
@@ -66,7 +89,7 @@ The application can be used directly from the command line for quick searches an
 ./target/release/rescue-groups-mcp server
 
 # Start the MCP server in HTTP mode
-./target/release/rescue-groups-mcp http --port 8080 --auth-token mysecrettoken
+./target/release/rescue-groups-mcp http --port 3000 --auth-token mysecrettoken
 ```
 
 ### :shell: Shell Completion
@@ -133,7 +156,7 @@ docker run -i --rm -e RESCUE_GROUPS_API_KEY=your_key rescue-groups-mcp
 Run the container (HTTP Mode):
 
 ```bash
-docker run -d -p 8080:8080 -e RESCUE_GROUPS_API_KEY=your_key rescue-groups-mcp http --port 8080
+docker run -d -p 3000:3000 -e RESCUE_GROUPS_API_KEY=your_key rescue-groups-mcp http --port 3000
 ```
 
 ### :speech_balloon: MCP Server Mode
@@ -168,12 +191,25 @@ claude mcp add rescue-groups-mcp -- server --env RESCUE_GROUPS_API_KEY=your_api_
 
 ### :gear: Configuration File
 
-The server can load configuration from a file named `config.toml`, `config.yaml`, or `config.json` in the current directory, or via the `--config` flag. See `config.toml.example` for details.
+The server can load configuration from a file named `config.toml`, `config.yaml`, or `config.json` in the current directory, or via the `--config` flag.
+
+Example `config.toml`:
+
+```toml
+# Your RescueGroups.org API Key
+api_key = "YOUR_API_KEY_HERE"
+
+# Default search parameters (used if not provided by the agent)
+postal_code = "90210"
+miles = 50
+species = "dogs"
+```
 
 ### :earth_africa: Environment Variables
 
 You can also configure the server using environment variables:
 - `RESCUE_GROUPS_API_KEY`: Rescue Groups [API Key][1].
+- `MCP_AUTH_TOKEN`: Bearer token for authentication in HTTP mode.
 
 ## :balance_scale: License
 

@@ -11,6 +11,7 @@ use axum::{
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use clap_mangen::Man;
+use futures::future::join_all;
 use futures::stream::Stream;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -71,6 +72,10 @@ enum Commands {
     ListSpecies,
     /// Get details for a specific animal
     GetAnimal(AnimalIdArgs),
+    /// Get contact information for a specific animal
+    GetContact(AnimalIdArgs),
+    /// Compare multiple animals side-by-side
+    Compare(CompareArgs),
     /// Search for rescue organizations
     SearchOrgs(OrgSearchArgs),
     /// Get details for a specific organization
@@ -123,7 +128,7 @@ struct Settings {
     cache: Arc<moka::future::Cache<String, Value>>,
 }
 
-fn merge_configuration(cli: &Cli) -> Result<Settings, Box<dyn Error>> {
+fn merge_configuration(cli: &Cli) -> Result<Settings, Box<dyn Error + Send + Sync>> {
     let config_path = Path::new(&cli.config);
 
     let file_config: Option<ConfigFile> = if config_path.exists() {
@@ -174,7 +179,7 @@ async fn fetch_with_cache(
     url: &str,
     method: &str,
     body: Option<Value>,
-) -> Result<Value, Box<dyn Error>> {
+) -> Result<Value, Box<dyn Error + Send + Sync>> {
     let cache_key = format!(
         "{}:{}:{}",
         method,
@@ -253,6 +258,13 @@ struct AnimalIdArgs {
 }
 
 #[derive(Args, Deserialize, Clone, Debug)]
+struct CompareArgs {
+    /// Comma-separated list of animal IDs to compare (max 5)
+    #[arg(long, value_delimiter = ',')]
+    animal_ids: Vec<String>,
+}
+
+#[derive(Args, Deserialize, Clone, Debug)]
 struct SpeciesArgs {
     #[arg(long)]
     species: String,
@@ -313,7 +325,50 @@ fn format_single_animal(animal: &Value) -> String {
     )
 }
 
-fn format_animal_results(data: &Value) -> Result<String, Box<dyn Error>> {
+fn format_contact_info(data: &Value) -> Result<String, Box<dyn Error + Send + Sync>> {
+    let animal = data.get("data").ok_or("No animal data found")?;
+    let animal_attrs = &animal["attributes"];
+    let animal_name = animal_attrs["name"].as_str().unwrap_or("this pet");
+
+    let mut contact_info = format!("## Contact Information for {}\n\n", animal_name);
+
+    // Try to find org info in "included"
+    let org = data.get("included").and_then(|inc| {
+        inc.as_array()?.iter().find(|item| item["type"] == "orgs")
+    });
+
+    if let Some(o) = org {
+        let attrs = &o["attributes"];
+        let name = attrs["name"].as_str().unwrap_or("Unknown Organization");
+        let email = attrs["email"].as_str().unwrap_or("No email provided");
+        let phone = attrs["phone"].as_str().unwrap_or("No phone provided");
+        let city = attrs["city"].as_str().unwrap_or("Unknown City");
+        let state = attrs["state"].as_str().unwrap_or("");
+        let url = attrs["url"].as_str().unwrap_or("");
+
+        contact_info.push_str(&format!("**Organization:** {}\n", name));
+        contact_info.push_str(&format!("**Email:** {}\n", email));
+        contact_info.push_str(&format!("**Phone:** {}\n", phone));
+        contact_info.push_str(&format!("**Location:** {}, {}\n", city, state));
+        if !url.is_empty() {
+            contact_info.push_str(&format!("**Website:** [{}]({})\n", url, url));
+        }
+    } else {
+        contact_info.push_str("Detailed organization contact information is not available for this animal.\n");
+    }
+
+    let animal_url = animal_attrs["url"].as_str().unwrap_or("");
+    if !animal_url.is_empty() {
+        contact_info.push_str(&format!(
+            "\n[View adoption application or more info on RescueGroups]({})\n",
+            animal_url
+        ));
+    }
+
+    Ok(contact_info)
+}
+
+fn format_animal_results(data: &Value) -> Result<String, Box<dyn Error + Send + Sync>> {
     let animals = data
         .get("data")
         .and_then(|d| d.as_array())
@@ -346,6 +401,66 @@ fn format_animal_results(data: &Value) -> Result<String, Box<dyn Error>> {
     Ok(results.join("\n\n---\n\n"))
 }
 
+fn format_comparison_table(data: &Value) -> Result<String, Box<dyn Error + Send + Sync>> {
+    let animals = data
+        .get("data")
+        .and_then(|d| d.as_array())
+        .ok_or("No data found")?;
+
+    if animals.is_empty() {
+        return Ok("No animals to compare.".to_string());
+    }
+
+    let headers = vec![
+        "Breed", "Age", "Sex", "Size", "Kids?", "Dogs?", "Cats?", "Trained?", "Special?",
+    ];
+
+    let mut markdown = String::new();
+
+    // Header Row
+    markdown.push_str("| Feature |");
+    for animal in animals {
+        let name = animal["attributes"]["name"].as_str().unwrap_or("Unknown");
+        let url = animal["attributes"]["url"].as_str().unwrap_or("");
+        markdown.push_str(&format!(" [{}]({}) |", name, url));
+    }
+    markdown.push('\n');
+
+    // Separator Row
+    markdown.push_str("| :--- |");
+    for _ in animals {
+        markdown.push_str(" :--- |");
+    }
+    markdown.push('\n');
+
+    // Data Rows
+    for header in headers {
+        markdown.push_str(&format!("| **{}** |", header));
+        for animal in animals {
+            let attrs = &animal["attributes"];
+            let val = match header {
+                "Breed" => attrs["breedString"].as_str().unwrap_or("-").to_string(),
+                "Age" => attrs["ageGroup"].as_str().unwrap_or("-").to_string(),
+                "Sex" => attrs["sex"].as_str().unwrap_or("-").to_string(),
+                "Size" => attrs["sizeGroup"].as_str().unwrap_or("-").to_string(),
+                "Kids?" => attrs["isGoodWithChildren"]
+                    .as_str()
+                    .unwrap_or("-")
+                    .to_string(),
+                "Dogs?" => attrs["isGoodWithDogs"].as_str().unwrap_or("-").to_string(),
+                "Cats?" => attrs["isGoodWithCats"].as_str().unwrap_or("-").to_string(),
+                "Trained?" => attrs["isHouseTrained"].as_str().unwrap_or("-").to_string(),
+                "Special?" => attrs["isSpecialNeeds"].as_str().unwrap_or("-").to_string(),
+                _ => "-".to_string(),
+            };
+            markdown.push_str(&format!(" {} |", val));
+        }
+        markdown.push('\n');
+    }
+
+    Ok(markdown)
+}
+
 fn format_single_org(org: &Value) -> String {
     let attrs = &org["attributes"];
     let name = attrs["name"].as_str().unwrap_or("Unknown");
@@ -367,7 +482,7 @@ fn format_single_org(org: &Value) -> String {
     )
 }
 
-fn format_species_results(data: &Value) -> Result<String, Box<dyn Error>> {
+fn format_species_results(data: &Value) -> Result<String, Box<dyn Error + Send + Sync>> {
     let species = data
         .get("data")
         .and_then(|d| d.as_array())
@@ -387,7 +502,10 @@ fn format_species_results(data: &Value) -> Result<String, Box<dyn Error>> {
     Ok(format!("### Supported Species\n\n{}", names.join("\n")))
 }
 
-fn format_metadata_results(data: &Value, metadata_type: &str) -> Result<String, Box<dyn Error>> {
+fn format_metadata_results(
+    data: &Value,
+    metadata_type: &str,
+) -> Result<String, Box<dyn Error + Send + Sync>> {
     let items = data
         .get("data")
         .and_then(|d| d.as_array())
@@ -411,7 +529,7 @@ fn format_metadata_results(data: &Value, metadata_type: &str) -> Result<String, 
     ))
 }
 
-fn format_org_results(data: &Value) -> Result<String, Box<dyn Error>> {
+fn format_org_results(data: &Value) -> Result<String, Box<dyn Error + Send + Sync>> {
     let orgs = data
         .get("data")
         .and_then(|d| d.as_array())
@@ -443,7 +561,10 @@ fn format_org_results(data: &Value) -> Result<String, Box<dyn Error>> {
     Ok(results.join("\n\n---\n\n"))
 }
 
-fn format_breed_results(data: &Value, species: &str) -> Result<String, Box<dyn Error>> {
+fn format_breed_results(
+    data: &Value,
+    species: &str,
+) -> Result<String, Box<dyn Error + Send + Sync>> {
     let breeds = data
         .get("data")
         .and_then(|d| d.as_array())
@@ -467,9 +588,12 @@ fn format_breed_results(data: &Value, species: &str) -> Result<String, Box<dyn E
     ))
 }
 
-fn print_output<F>(result: Result<Value, Box<dyn Error>>, json_mode: bool, formatter: F)
-where
-    F: Fn(&Value) -> Result<String, Box<dyn Error>>,
+fn print_output<F>(
+    result: Result<Value, Box<dyn Error + Send + Sync>>,
+    json_mode: bool,
+    formatter: F,
+) where
+    F: Fn(&Value) -> Result<String, Box<dyn Error + Send + Sync>>,
 {
     match result {
         Ok(value) => {
@@ -486,7 +610,10 @@ where
     }
 }
 
-async fn list_breeds(settings: &Settings, args: SpeciesArgs) -> Result<Value, Box<dyn Error>> {
+async fn list_breeds(
+    settings: &Settings,
+    args: SpeciesArgs,
+) -> Result<Value, Box<dyn Error + Send + Sync>> {
     let url = format!(
         "{}/public/animals/species/{}/breeds",
         settings.base_url, args.species
@@ -494,12 +621,15 @@ async fn list_breeds(settings: &Settings, args: SpeciesArgs) -> Result<Value, Bo
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn list_species(settings: &Settings) -> Result<Value, Box<dyn Error>> {
+async fn list_species(settings: &Settings) -> Result<Value, Box<dyn Error + Send + Sync>> {
     let url = format!("{}/public/animals/species", settings.base_url);
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn list_metadata(settings: &Settings, args: MetadataArgs) -> Result<Value, Box<dyn Error>> {
+async fn list_metadata(
+    settings: &Settings,
+    args: MetadataArgs,
+) -> Result<Value, Box<dyn Error + Send + Sync>> {
     let url = format!(
         "{}/public/animals/{}",
         settings.base_url, args.metadata_type
@@ -507,7 +637,7 @@ async fn list_metadata(settings: &Settings, args: MetadataArgs) -> Result<Value,
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn list_animals(settings: &Settings) -> Result<Value, Box<dyn Error>> {
+async fn list_animals(settings: &Settings) -> Result<Value, Box<dyn Error + Send + Sync>> {
     let url = format!("{}/public/animals", settings.base_url);
     fetch_with_cache(settings, &url, "GET", None).await
 }
@@ -515,15 +645,62 @@ async fn list_animals(settings: &Settings) -> Result<Value, Box<dyn Error>> {
 async fn get_animal_details(
     settings: &Settings,
     args: AnimalIdArgs,
-) -> Result<Value, Box<dyn Error>> {
+) -> Result<Value, Box<dyn Error + Send + Sync>> {
     let url = format!("{}/public/animals/{}", settings.base_url, args.animal_id);
     fetch_with_cache(settings, &url, "GET", None).await
+}
+
+async fn get_contact_info(
+    settings: &Settings,
+    args: AnimalIdArgs,
+) -> Result<Value, Box<dyn Error + Send + Sync>> {
+    let url = format!("{}/public/animals/{}?include=orgs", settings.base_url, args.animal_id);
+    fetch_with_cache(settings, &url, "GET", None).await
+}
+
+async fn compare_animals(
+    settings: &Settings,
+    args: CompareArgs,
+) -> Result<Value, Box<dyn Error + Send + Sync>> {
+    let mut futures = Vec::new();
+    // Deduplicate and limit
+    let mut ids = args.animal_ids.clone();
+    ids.sort();
+    ids.dedup();
+
+    for id in ids.iter().take(5) {
+        let fut = get_animal_details(
+            settings,
+            AnimalIdArgs {
+                animal_id: id.clone(),
+            },
+        );
+        futures.push(fut);
+    }
+
+    let results = join_all(futures).await;
+
+    let mut valid_animals = Vec::new();
+    let mut errors = Vec::new();
+
+    for res in results {
+        match res {
+            Ok(val) => {
+                if let Some(data) = val.get("data") {
+                    valid_animals.push(data.clone());
+                }
+            }
+            Err(e) => errors.push(e.to_string()),
+        }
+    }
+
+    Ok(json!({ "data": valid_animals, "errors": errors }))
 }
 
 async fn search_organizations(
     settings: &Settings,
     args: OrgSearchArgs,
-) -> Result<Value, Box<dyn Error>> {
+) -> Result<Value, Box<dyn Error + Send + Sync>> {
     let url = format!("{}/public/orgs/search", settings.base_url);
     let miles = args.miles.unwrap_or(settings.default_miles);
     let postal_code = args
@@ -546,12 +723,15 @@ async fn search_organizations(
 async fn get_organization_details(
     settings: &Settings,
     args: OrgIdArgs,
-) -> Result<Value, Box<dyn Error>> {
+) -> Result<Value, Box<dyn Error + Send + Sync>> {
     let url = format!("{}/public/orgs/{}", settings.base_url, args.org_id);
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn list_org_animals(settings: &Settings, args: OrgIdArgs) -> Result<Value, Box<dyn Error>> {
+async fn list_org_animals(
+    settings: &Settings,
+    args: OrgIdArgs,
+) -> Result<Value, Box<dyn Error + Send + Sync>> {
     let url = format!(
         "{}/public/orgs/{}/animals/search/available",
         settings.base_url, args.org_id
@@ -559,7 +739,10 @@ async fn list_org_animals(settings: &Settings, args: OrgIdArgs) -> Result<Value,
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn fetch_pets(settings: &Settings, args: ToolArgs) -> Result<Value, Box<dyn Error>> {
+async fn fetch_pets(
+    settings: &Settings,
+    args: ToolArgs,
+) -> Result<Value, Box<dyn Error + Send + Sync>> {
     // Merge Tool Args with Server Defaults
     // This is the "Dynamic Lookup" logic:
     // 1. If AI sends a postal_code, use it.
@@ -668,7 +851,7 @@ async fn fetch_pets(settings: &Settings, args: ToolArgs) -> Result<Value, Box<dy
 async fn fetch_adopted_pets(
     settings: &Settings,
     args: AdoptedAnimalsArgs,
-) -> Result<Value, Box<dyn Error>> {
+) -> Result<Value, Box<dyn Error + Send + Sync>> {
     let miles = args.miles.unwrap_or(settings.default_miles);
     let species = args.species.as_deref().unwrap_or(&settings.default_species);
     let postal_code = args
@@ -792,7 +975,7 @@ async fn message_handler(
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     // 1. Load Settings
     let cli = Cli::parse();
     // Clone command to use after merge_configuration (which consumes cli)
@@ -866,6 +1049,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             print_output(get_animal_details(&settings, args).await, cli.json, |v| {
                 let animal = v.get("data").ok_or("No animal data found")?;
                 Ok(format_single_animal(animal))
+            });
+        }
+        Some(Commands::GetContact(args)) => {
+            print_output(get_contact_info(&settings, args).await, cli.json, |v| {
+                format_contact_info(v)
+            });
+        }
+        Some(Commands::Compare(args)) => {
+            print_output(compare_animals(&settings, args).await, cli.json, |v| {
+                format_comparison_table(v)
             });
         }
         Some(Commands::SearchOrgs(args)) => {
@@ -993,6 +1186,32 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                                 "animal_id": { "type": "string", "description": "The unique ID of the animal." }
                             },
                             "required": ["animal_id"]
+                        }
+                    },
+                    {
+                        "name": "get_contact_info",
+                        "description": "Get the primary contact method (email, phone, organization) for a specific animal.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "animal_id": { "type": "string", "description": "The unique ID of the animal." }
+                            },
+                            "required": ["animal_id"]
+                        }
+                    },
+                    {
+                        "name": "compare_animals",
+                        "description": "Compare up to 5 animals side-by-side by their IDs.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "animal_ids": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "List of animal IDs to compare (max 5)."
+                                }
+                            },
+                            "required": ["animal_ids"]
                         }
                     },
                     {
@@ -1160,6 +1379,46 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                                     }
                                 }
                             }
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
+                        }
+                    }
+                    "get_contact_info" => {
+                        let args: AnimalIdArgs = serde_json::from_value(
+                            params["arguments"].clone(),
+                        )
+                        .unwrap_or(AnimalIdArgs {
+                            animal_id: "0".to_string(),
+                        });
+
+                        match get_contact_info(settings, args).await {
+                            Ok(data) => match format_contact_info(&data) {
+                                Ok(content) => {
+                                    json!({ "content": [{ "type": "text", "text": content }] })
+                                }
+                                Err(e) => {
+                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
+                                }
+                            },
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
+                        }
+                    }
+                    "compare_animals" => {
+                        let args: CompareArgs = serde_json::from_value(params["arguments"].clone())
+                            .unwrap_or(CompareArgs { animal_ids: vec![] });
+
+                        match compare_animals(settings, args).await {
+                            Ok(data) => match format_comparison_table(&data) {
+                                Ok(content) => {
+                                    json!({ "content": [{ "type": "text", "text": content }] })
+                                }
+                                Err(e) => {
+                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
+                                }
+                            },
                             Err(e) => {
                                 json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
                             }
@@ -1995,5 +2254,128 @@ mod tests {
         let _ = get_animal_details(&settings, args).await.unwrap();
 
         m.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_compare_animals_mock() {
+        let mut server = mockito::Server::new_async().await;
+
+        // Animal 1
+        let body1 = json!({
+            "data": {
+                "attributes": {
+                    "name": "Pet1",
+                    "breedString": "Breed1",
+                    "sex": "Male",
+                    "url": "http://p1"
+                }
+            }
+        });
+        let _m1 = server
+            .mock("GET", "/public/animals/1")
+            .with_status(200)
+            .with_header("content-type", "application/vnd.api+json")
+            .with_body(serde_json::to_string(&body1).unwrap())
+            .create_async()
+            .await;
+
+        // Animal 2
+        let body2 = json!({
+            "data": {
+                "attributes": {
+                    "name": "Pet2",
+                    "breedString": "Breed2",
+                    "sex": "Female",
+                    "url": "http://p2"
+                }
+            }
+        });
+        let _m2 = server
+            .mock("GET", "/public/animals/2")
+            .with_status(200)
+            .with_header("content-type", "application/vnd.api+json")
+            .with_body(serde_json::to_string(&body2).unwrap())
+            .create_async()
+            .await;
+
+        let settings = Settings {
+            api_key: "test_key".to_string(),
+            base_url: server.url(),
+            default_postal_code: "90210".to_string(),
+            default_miles: 50,
+            default_species: "dogs".to_string(),
+            cache: Arc::new(moka::future::Cache::builder().build()),
+        };
+
+        let args = CompareArgs {
+            animal_ids: vec!["1".to_string(), "2".to_string()],
+        };
+
+        let value = compare_animals(&settings, args).await.unwrap();
+        let result = format_comparison_table(&value).unwrap();
+
+        assert!(result.contains("Pet1"));
+        assert!(result.contains("Pet2"));
+        assert!(result.contains("Breed1"));
+        assert!(result.contains("Breed2"));
+        assert!(result.contains("Male"));
+        assert!(result.contains("Female"));
+    }
+
+    #[tokio::test]
+    async fn test_get_contact_info_mock() {
+        let mut server = mockito::Server::new_async().await;
+        let body = json!({
+            "data": {
+                "attributes": {
+                    "name": "Buddy",
+                    "url": "https://buddy-link"
+                }
+            },
+            "included": [
+                {
+                    "type": "orgs",
+                    "attributes": {
+                        "name": "Rescue Org",
+                        "email": "contact@rescue.org",
+                        "phone": "555-5555",
+                        "city": "Shelter City",
+                        "state": "ST",
+                        "url": "https://rescue.org"
+                    }
+                }
+            ]
+        });
+
+        let _m = server
+            .mock("GET", "/public/animals/123?include=orgs")
+            .with_status(200)
+            .with_header("content-type", "application/vnd.api+json")
+            .with_body(serde_json::to_string(&body).unwrap())
+            .create_async()
+            .await;
+
+        let settings = Settings {
+            api_key: "test_key".to_string(),
+            base_url: server.url(),
+            default_postal_code: "90210".to_string(),
+            default_miles: 50,
+            default_species: "dogs".to_string(),
+            cache: Arc::new(moka::future::Cache::builder().build()),
+        };
+
+        let args = AnimalIdArgs {
+            animal_id: "123".to_string(),
+        };
+
+        let value = get_contact_info(&settings, args).await.unwrap();
+        let result = format_contact_info(&value).unwrap();
+
+        assert!(result.contains("## Contact Information for Buddy"));
+        assert!(result.contains("**Organization:** Rescue Org"));
+        assert!(result.contains("**Email:** contact@rescue.org"));
+        assert!(result.contains("**Phone:** 555-5555"));
+        assert!(result.contains("**Location:** Shelter City, ST"));
+        assert!(result.contains("[View adoption application or more info on RescueGroups](https://buddy-link)"));
     }
 }
