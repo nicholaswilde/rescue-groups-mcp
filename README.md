@@ -61,6 +61,13 @@ The application can be used directly from the command line for quick searches an
 
 # Start the MCP server (default behavior)
 ./target/release/rescue-groups-mcp server
+
+# Generate shell completions (bash, zsh, fish, powershell, elvish)
+./target/release/rescue-groups-mcp generate --shell bash > completion.bash
+
+# Generate man page
+./target/release/rescue-groups-mcp generate --man ./man
+man ./man/rescue-groups-mcp.1
 ```
 
 ### :speech_balloon: MCP Server Mode

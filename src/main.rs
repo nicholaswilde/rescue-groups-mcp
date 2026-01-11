@@ -1,4 +1,6 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap_complete::{generate, Shell};
+use clap_mangen::Man;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::error::Error;
@@ -6,6 +8,7 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::sync::Arc;
+// ... (rest of imports if any)
 
 // =========================================================================
 // 1. CONFIGURATION
@@ -53,6 +56,19 @@ enum Commands {
     ListBreeds(SpeciesArgs),
     /// List metadata values (colors, patterns, etc.)
     ListMetadata(MetadataArgs),
+    /// Generate shell completions or man pages
+    Generate(GenerateArgs),
+}
+
+#[derive(Args, Clone, Debug)]
+struct GenerateArgs {
+    /// Type of shell completion to generate
+    #[arg(short, long)]
+    shell: Option<Shell>,
+    
+    /// Generate man pages to the specified directory
+    #[arg(short, long)]
+    man: Option<String>,
 }
 
 #[derive(Clone)]
@@ -796,6 +812,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
             match list_metadata(&settings, args).await {
                 Ok(result) => println!("{}", result),
                 Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+        Some(Commands::Generate(args)) => {
+            let mut cmd = Cli::command();
+            let bin_name = cmd.get_name().to_string();
+
+            if let Some(shell) = args.shell {
+                generate(shell, &mut cmd, bin_name, &mut io::stdout());
+            }
+
+            if let Some(ref man_dir) = args.man {
+                let out_dir = Path::new(man_dir);
+                if !out_dir.exists() {
+                    fs::create_dir_all(out_dir)?;
+                }
+                Man::new(cmd).render(&mut fs::File::create(out_dir.join("rescue-groups-mcp.1"))?)?;
+                eprintln!("Man page generated in {}", man_dir);
+            }
+
+            if args.shell.is_none() && args.man.is_none() {
+                eprintln!("Please specify --shell <SHELL> or --man <DIR>");
             }
         }
     }
