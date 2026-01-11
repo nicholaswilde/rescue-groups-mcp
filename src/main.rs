@@ -1,7 +1,10 @@
 use axum::{
-    extract::{State, Json, Query},
+    extract::{Json, Query, State},
     http::{HeaderMap, StatusCode},
-    response::{sse::{Event, KeepAlive, Sse}, IntoResponse},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse,
+    },
     routing::{get, post},
     Router,
 };
@@ -85,7 +88,7 @@ enum Commands {
 struct HttpArgs {
     /// Host to bind to
     #[arg(long, default_value = "0.0.0.0")]
-host: String,
+    host: String,
 
     /// Port to bind to
     #[arg(long, default_value = "3000")]
@@ -101,7 +104,7 @@ struct GenerateArgs {
     /// Type of shell completion to generate
     #[arg(short, long)]
     shell: Option<Shell>,
-    
+
     /// Generate man pages to the specified directory
     #[arg(short, long)]
     man: Option<String>,
@@ -154,10 +157,7 @@ fn merge_configuration(cli: &Cli) -> Result<Settings, Box<dyn Error>> {
             .as_ref()
             .and_then(|c| c.postal_code.clone())
             .unwrap_or_else(|| "90210".to_string()),
-        default_miles: file_config
-            .as_ref()
-            .and_then(|c| c.miles)
-            .unwrap_or(50),
+        default_miles: file_config.as_ref().and_then(|c| c.miles).unwrap_or(50),
         default_species: file_config
             .as_ref()
             .and_then(|c| c.species.clone())
@@ -401,7 +401,11 @@ fn format_metadata_results(data: &Value, metadata_type: &str) -> Result<String, 
 
     names.sort();
 
-    Ok(format!("### Supported {}\n\n{}", metadata_type, names.join("\n")))
+    Ok(format!(
+        "### Supported {}\n\n{}",
+        metadata_type,
+        names.join("\n")
+    ))
 }
 
 fn format_org_results(data: &Value) -> Result<String, Box<dyn Error>> {
@@ -493,7 +497,10 @@ async fn list_species(settings: &Settings) -> Result<Value, Box<dyn Error>> {
 }
 
 async fn list_metadata(settings: &Settings, args: MetadataArgs) -> Result<Value, Box<dyn Error>> {
-    let url = format!("{}/public/animals/{}", settings.base_url, args.metadata_type);
+    let url = format!(
+        "{}/public/animals/{}",
+        settings.base_url, args.metadata_type
+    );
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
@@ -716,17 +723,18 @@ async fn http_handler(
 ) -> impl IntoResponse {
     // Auth check
     if let Some(token) = &state.auth_token {
-        let auth_header = headers.get("Authorization")
+        let auth_header = headers
+            .get("Authorization")
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
-        
+
         if auth_header != format!("Bearer {}", token) {
             return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
         }
     }
 
     let response = process_mcp_request(req, &state.settings).await;
-    
+
     if let Some(id) = response.0 {
         let output = json!({
             "jsonrpc": "2.0",
@@ -768,10 +776,12 @@ async fn message_handler(
             "id": id,
             "result": response.1
         });
-        
+
         // Find session and send response via SSE
         if let Some(tx) = state.sessions.read().await.get(&params.session_id) {
-             let _ = tx.send(Ok(Event::default().event("message").data(output.to_string())));
+            let _ = tx.send(Ok(Event::default()
+                .event("message")
+                .data(output.to_string())));
         }
     }
 
@@ -806,7 +816,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Ok(r) => r,
                     Err(_) => continue, // Ignore malformed lines
                 };
-                
+
                 let response = process_mcp_request(req, &settings).await;
 
                 if let Some(id) = response.0 {
@@ -835,40 +845,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
             eprintln!("RescueGroups MCP Server running (HTTP + SSE) on {}", addr);
-            
+
             let listener = tokio::net::TcpListener::bind(addr).await?;
             axum::serve(listener, app).await?;
         }
         Some(Commands::Search(args)) => {
-            print_output(
-                fetch_pets(&settings, args).await,
-                cli.json,
-                |v| format_animal_results(v),
-            );
+            print_output(fetch_pets(&settings, args).await, cli.json, |v| {
+                format_animal_results(v)
+            });
         }
         Some(Commands::ListSpecies) => {
-            print_output(
-                list_species(&settings).await,
-                cli.json,
-                |v| format_species_results(v),
-            );
+            print_output(list_species(&settings).await, cli.json, |v| {
+                format_species_results(v)
+            });
         }
         Some(Commands::GetAnimal(args)) => {
-            print_output(
-                get_animal_details(&settings, args).await,
-                cli.json,
-                |v| {
-                    let animal = v.get("data").ok_or("No animal data found")?;
-                    Ok(format_single_animal(animal))
-                },
-            );
+            print_output(get_animal_details(&settings, args).await, cli.json, |v| {
+                let animal = v.get("data").ok_or("No animal data found")?;
+                Ok(format_single_animal(animal))
+            });
         }
         Some(Commands::SearchOrgs(args)) => {
-            print_output(
-                search_organizations(&settings, args).await,
-                cli.json,
-                |v| format_org_results(v),
-            );
+            print_output(search_organizations(&settings, args).await, cli.json, |v| {
+                format_org_results(v)
+            });
         }
         Some(Commands::GetOrg(args)) => {
             print_output(
@@ -881,34 +881,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
             );
         }
         Some(Commands::ListOrgAnimals(args)) => {
-            print_output(
-                list_org_animals(&settings, args).await,
-                cli.json,
-                |v| format_animal_results(v),
-            );
+            print_output(list_org_animals(&settings, args).await, cli.json, |v| {
+                format_animal_results(v)
+            });
         }
         Some(Commands::ListAdopted(args)) => {
-            print_output(
-                fetch_adopted_pets(&settings, args).await,
-                cli.json,
-                |v| format_animal_results(v),
-            );
+            print_output(fetch_adopted_pets(&settings, args).await, cli.json, |v| {
+                format_animal_results(v)
+            });
         }
         Some(Commands::ListBreeds(args)) => {
             let species = args.species.clone();
-            print_output(
-                list_breeds(&settings, args).await,
-                cli.json,
-                |v| format_breed_results(v, &species),
-            );
+            print_output(list_breeds(&settings, args).await, cli.json, |v| {
+                format_breed_results(v, &species)
+            });
         }
         Some(Commands::ListMetadata(args)) => {
             let metadata_type = args.metadata_type.clone();
-            print_output(
-                list_metadata(&settings, args).await,
-                cli.json,
-                |v| format_metadata_results(v, &metadata_type),
-            );
+            print_output(list_metadata(&settings, args).await, cli.json, |v| {
+                format_metadata_results(v, &metadata_type)
+            });
         }
         Some(Commands::Generate(args)) => {
             let mut cmd = Cli::command();
@@ -923,7 +915,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 if !out_dir.exists() {
                     fs::create_dir_all(out_dir)?;
                 }
-                Man::new(cmd).render(&mut fs::File::create(out_dir.join("rescue-groups-mcp.1"))?)?;
+                Man::new(cmd)
+                    .render(&mut fs::File::create(out_dir.join("rescue-groups-mcp.1"))?)?;
                 eprintln!("Man page generated in {}", man_dir);
             }
 
@@ -969,9 +962,9 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                         "inputSchema": {
                             "type": "object",
                             "properties": {
-                                "metadata_type": { 
-                                    "type": "string", 
-                                    "description": "The type of metadata to list (e.g., colors, patterns, qualities)" 
+                                "metadata_type": {
+                                    "type": "string",
+                                    "description": "The type of metadata to list (e.g., colors, patterns, qualities)"
                                 }
                             },
                             "required": ["metadata_type"]
@@ -1049,10 +1042,10 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                                 "good_with_cats": { "type": "boolean", "description": "Whether the pet is good with cats." },
                                 "house_trained": { "type": "boolean", "description": "Whether the pet is house trained." },
                                 "special_needs": { "type": "boolean", "description": "Whether the pet has special needs." },
-                                "sort_by": { 
-                                    "type": "string", 
+                                "sort_by": {
+                                    "type": "string",
                                     "enum": ["Newest", "Distance", "Random"],
-                                    "description": "Sort order for results." 
+                                    "description": "Sort order for results."
                                 }
                             }
                         }
@@ -1078,46 +1071,70 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                 match name {
                     "list_animals" => match list_animals(settings).await {
                         Ok(data) => match format_animal_results(&data) {
-                            Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
-                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                            Ok(content) => {
+                                json!({ "content": [{ "type": "text", "text": content }] })
+                            }
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
+                            }
                         },
-                        Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
+                        Err(e) => {
+                            json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                        }
                     },
                     "list_species" => match list_species(settings).await {
                         Ok(data) => match format_species_results(&data) {
-                            Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
-                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                            Ok(content) => {
+                                json!({ "content": [{ "type": "text", "text": content }] })
+                            }
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
+                            }
                         },
-                        Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
+                        Err(e) => {
+                            json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                        }
                     },
                     "list_metadata" => {
-                        let args: MetadataArgs = serde_json::from_value(params["arguments"].clone())
-                            .unwrap_or(MetadataArgs {
-                                metadata_type: "colors".to_string(),
-                            });
+                        let args: MetadataArgs = serde_json::from_value(
+                            params["arguments"].clone(),
+                        )
+                        .unwrap_or(MetadataArgs {
+                            metadata_type: "colors".to_string(),
+                        });
 
                         match list_metadata(settings, args.clone()).await {
                             Ok(data) => match format_metadata_results(&data, &args.metadata_type) {
-                                Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
-                                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                                Ok(content) => {
+                                    json!({ "content": [{ "type": "text", "text": content }] })
+                                }
+                                Err(e) => {
+                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
+                                }
                             },
-                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
                         }
-                    },
+                    }
                     "list_breeds" => {
-                        let args: SpeciesArgs = serde_json::from_value(
-                            params["arguments"].clone(),
-                        )
-                        .unwrap_or(SpeciesArgs {
-                            species: settings.default_species.clone(),
-                        });
+                        let args: SpeciesArgs = serde_json::from_value(params["arguments"].clone())
+                            .unwrap_or(SpeciesArgs {
+                                species: settings.default_species.clone(),
+                            });
 
                         match list_breeds(settings, args.clone()).await {
                             Ok(data) => match format_breed_results(&data, &args.species) {
-                                Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
-                                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                                Ok(content) => {
+                                    json!({ "content": [{ "type": "text", "text": content }] })
+                                }
+                                Err(e) => {
+                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
+                                }
                             },
-                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
                         }
                     }
                     "get_animal_details" => {
@@ -1132,11 +1149,17 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                             Ok(data) => {
                                 let animal = data.get("data").ok_or("No animal data found");
                                 match animal {
-                                    Ok(a) => json!({ "content": [{ "type": "text", "text": format_single_animal(a) }] }),
-                                    Err(_) => json!({ "content": [{ "type": "text", "text": "Animal not found" }], "isError": true }),
+                                    Ok(a) => {
+                                        json!({ "content": [{ "type": "text", "text": format_single_animal(a) }] })
+                                    }
+                                    Err(_) => {
+                                        json!({ "content": [{ "type": "text", "text": "Animal not found" }], "isError": true })
+                                    }
                                 }
-                            },
-                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
+                            }
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
                         }
                     }
                     "search_organizations" => {
@@ -1150,72 +1173,90 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
 
                         match search_organizations(settings, args).await {
                             Ok(data) => match format_org_results(&data) {
-                                Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
-                                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                                Ok(content) => {
+                                    json!({ "content": [{ "type": "text", "text": content }] })
+                                }
+                                Err(e) => {
+                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
+                                }
                             },
-                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
                         }
                     }
                     "get_organization_details" => {
-                        let args: OrgIdArgs = serde_json::from_value(
-                            params["arguments"].clone(),
-                        )
-                        .unwrap_or(OrgIdArgs {
-                            org_id: "0".to_string(),
-                        });
+                        let args: OrgIdArgs = serde_json::from_value(params["arguments"].clone())
+                            .unwrap_or(OrgIdArgs {
+                                org_id: "0".to_string(),
+                            });
 
                         match get_organization_details(settings, args).await {
                             Ok(data) => {
                                 let org = data.get("data").ok_or("No organization data found");
                                 match org {
-                                    Ok(o) => json!({ "content": [{ "type": "text", "text": format_single_org(o) }] }),
-                                    Err(_) => json!({ "content": [{ "type": "text", "text": "Organization not found" }], "isError": true }),
+                                    Ok(o) => {
+                                        json!({ "content": [{ "type": "text", "text": format_single_org(o) }] })
+                                    }
+                                    Err(_) => {
+                                        json!({ "content": [{ "type": "text", "text": "Organization not found" }], "isError": true })
+                                    }
                                 }
-                            },
-                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
+                            }
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
                         }
                     }
                     "list_org_animals" => {
-                        let args: OrgIdArgs = serde_json::from_value(
-                            params["arguments"].clone(),
-                        )
-                        .unwrap_or(OrgIdArgs {
-                            org_id: "0".to_string(),
-                        });
+                        let args: OrgIdArgs = serde_json::from_value(params["arguments"].clone())
+                            .unwrap_or(OrgIdArgs {
+                                org_id: "0".to_string(),
+                            });
 
                         match list_org_animals(settings, args).await {
                             Ok(data) => match format_animal_results(&data) {
-                                Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
-                                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                                Ok(content) => {
+                                    json!({ "content": [{ "type": "text", "text": content }] })
+                                }
+                                Err(e) => {
+                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
+                                }
                             },
-                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
                         }
                     }
                     "search_adoptable_pets" => {
-                        let args: ToolArgs = serde_json::from_value(
-                            params["arguments"].clone(),
-                        )
-                        .unwrap_or(ToolArgs {
-                            postal_code: None,
-                            miles: None,
-                            species: None,
-                            sex: None,
-                            age: None,
-                            size: None,
-                            good_with_children: None,
-                            good_with_dogs: None,
-                            good_with_cats: None,
-                            house_trained: None,
-                            special_needs: None,
-                            sort_by: None,
-                        });
+                        let args: ToolArgs = serde_json::from_value(params["arguments"].clone())
+                            .unwrap_or(ToolArgs {
+                                postal_code: None,
+                                miles: None,
+                                species: None,
+                                sex: None,
+                                age: None,
+                                size: None,
+                                good_with_children: None,
+                                good_with_dogs: None,
+                                good_with_cats: None,
+                                house_trained: None,
+                                special_needs: None,
+                                sort_by: None,
+                            });
 
                         match fetch_pets(settings, args).await {
                             Ok(data) => match format_animal_results(&data) {
-                                Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
-                                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                                Ok(content) => {
+                                    json!({ "content": [{ "type": "text", "text": content }] })
+                                }
+                                Err(e) => {
+                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
+                                }
                             },
-                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
                         }
                     }
                     "list_adopted_animals" => {
@@ -1230,10 +1271,16 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
 
                         match fetch_adopted_pets(settings, args).await {
                             Ok(data) => match format_animal_results(&data) {
-                                Ok(content) => json!({ "content": [{ "type": "text", "text": content }] }),
-                                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true }),
+                                Ok(content) => {
+                                    json!({ "content": [{ "type": "text", "text": content }] })
+                                }
+                                Err(e) => {
+                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
+                                }
                             },
-                            Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true }),
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
                         }
                     }
                     _ => {
@@ -1618,7 +1665,8 @@ mod tests {
             ]
         });
 
-        let _m = server.mock("GET", "/public/animals/colors")
+        let _m = server
+            .mock("GET", "/public/animals/colors")
             .with_status(200)
             .with_header("content-type", "application/vnd.api+json")
             .with_body(serde_json::to_string(&body).unwrap())
@@ -1634,7 +1682,9 @@ mod tests {
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
-        let args = MetadataArgs { metadata_type: "colors".to_string() };
+        let args = MetadataArgs {
+            metadata_type: "colors".to_string(),
+        };
         let value = list_metadata(&settings, args).await.unwrap();
         let result = format_metadata_results(&value, "colors").unwrap();
         assert!(result.contains("### Supported colors"));
@@ -1657,7 +1707,8 @@ mod tests {
             ]
         });
 
-        let m = server.mock("POST", "/public/animals/search/available/dogs/haspic")
+        let m = server
+            .mock("POST", "/public/animals/search/available/dogs/haspic")
             .match_body(mockito::Matcher::Json(json!({
                 "data": {
                     "filterRadius": {
@@ -1729,7 +1780,8 @@ mod tests {
             ]
         });
 
-        let m = server.mock("POST", "/public/animals/search/available/dogs/haspic")
+        let m = server
+            .mock("POST", "/public/animals/search/available/dogs/haspic")
             .match_body(mockito::Matcher::Json(json!({
                 "data": {
                     "filterRadius": {
@@ -1807,7 +1859,11 @@ mod tests {
         });
 
         // Verify that the query parameter is appended to the URL
-        let m = server.mock("POST", "/public/animals/search/available/dogs/haspic?sort=-animals.createdDate")
+        let m = server
+            .mock(
+                "POST",
+                "/public/animals/search/available/dogs/haspic?sort=-animals.createdDate",
+            )
             .with_status(200)
             .with_header("content-type", "application/vnd.api+json")
             .with_body(serde_json::to_string(&body).unwrap())
@@ -1859,7 +1915,8 @@ mod tests {
             ]
         });
 
-        let m = server.mock("POST", "/public/animals/search/adopted/dogs/haspic")
+        let m = server
+            .mock("POST", "/public/animals/search/adopted/dogs/haspic")
             .with_status(200)
             .with_header("content-type", "application/vnd.api+json")
             .with_body(serde_json::to_string(&body).unwrap())
