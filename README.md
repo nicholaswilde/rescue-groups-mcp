@@ -67,12 +67,39 @@ The application can be used directly from the command line for quick searches an
 
 # Start the MCP server in HTTP mode
 ./target/release/rescue-groups-mcp http --port 8080 --auth-token mysecrettoken
+```
 
-# Generate shell completions (bash, zsh, fish, powershell, elvish)
-./target/release/rescue-groups-mcp generate --shell bash > completion.bash
+### :shell: Shell Completion
 
-# Generate man page
+Generate shell completion scripts for your favorite shell.
+
+#### Bash
+Add this to your `~/.bashrc`:
+```bash
+source <(rescue-groups-mcp generate --shell bash)
+```
+
+#### Zsh
+Add this to your `~/.zshrc`:
+```zsh
+source <(rescue-groups-mcp generate --shell zsh)
+```
+
+#### Fish
+Add this to your `~/.config/fish/config.fish`:
+```fish
+rescue-groups-mcp generate --shell fish | source
+```
+
+### :page_facing_up: Man Pages
+
+Generate and view the manual page for the CLI.
+
+```bash
+# Generate to a directory
 ./target/release/rescue-groups-mcp generate --man ./man
+
+# View the generated page
 man ./man/rescue-groups-mcp.1
 ```
 
