@@ -1,3 +1,10 @@
+use axum::{
+    extract::{State, Json},
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    routing::post,
+    Router,
+};
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use clap_mangen::Man;
@@ -6,8 +13,10 @@ use serde_json::{json, Value};
 use std::error::Error;
 use std::fs;
 use std::io::{self, BufRead, Write};
+use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
+
 // ... (rest of imports if any)
 
 // =========================================================================
@@ -42,6 +51,8 @@ struct Cli {
 enum Commands {
     /// Start the MCP server (default)
     Server,
+    /// Start the MCP server in HTTP mode
+    Http(HttpArgs),
     /// Search for adoptable pets
     Search(ToolArgs),
     /// List available species
@@ -62,6 +73,21 @@ enum Commands {
     ListMetadata(MetadataArgs),
     /// Generate shell completions or man pages
     Generate(GenerateArgs),
+}
+
+#[derive(Args, Clone, Debug)]
+struct HttpArgs {
+    /// Host to bind to
+    #[arg(long, default_value = "0.0.0.0")]
+host: String,
+
+    /// Port to bind to
+    #[arg(long, default_value = "3000")]
+    port: u16,
+
+    /// Optional authentication token (Bearer token)
+    #[arg(long, env = "MCP_AUTH_TOKEN")]
+    auth_token: Option<String>,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -665,6 +691,42 @@ struct JsonRpcRequest {
     params: Option<Value>,
 }
 
+#[derive(Clone)]
+struct AppState {
+    settings: Settings,
+    auth_token: Option<String>,
+}
+
+async fn http_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<JsonRpcRequest>,
+) -> impl IntoResponse {
+    // Auth check
+    if let Some(token) = &state.auth_token {
+        let auth_header = headers.get("Authorization")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
+        
+        if auth_header != format!("Bearer {}", token) {
+            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+        }
+    }
+
+    let response = process_mcp_request(req, &state.settings).await;
+    
+    if let Some(id) = response.0 {
+        let output = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": response.1
+        });
+        Json(output).into_response()
+    } else {
+        StatusCode::NO_CONTENT.into_response()
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // 1. Load Settings
@@ -680,7 +742,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let mut reader = stdin.lock();
             let mut line = String::new();
 
-            eprintln!("RescueGroups MCP Server running...");
+            eprintln!("RescueGroups MCP Server running (Stdio)...");
 
             // 3. Main Loop
             loop {
@@ -694,7 +756,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Err(_) => continue, // Ignore malformed lines
                 };
                 
-                // ... (rest of the MCP loop logic - I will insert it here)
                 let response = process_mcp_request(req, &settings).await;
 
                 if let Some(id) = response.0 {
@@ -707,6 +768,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     io::stdout().flush()?;
                 }
             }
+        }
+        Some(Commands::Http(args)) => {
+            let app_state = Arc::new(AppState {
+                settings: settings.clone(),
+                auth_token: args.auth_token,
+            });
+
+            let app = Router::new()
+                .route("/", post(http_handler))
+                .with_state(app_state);
+
+            let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
+            eprintln!("RescueGroups MCP Server running (HTTP) on {}", addr);
+            
+            let listener = tokio::net::TcpListener::bind(addr).await?;
+            axum::serve(listener, app).await?;
         }
         Some(Commands::Search(args)) => {
             print_output(

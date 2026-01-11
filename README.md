@@ -65,6 +65,9 @@ The application can be used directly from the command line for quick searches an
 # Start the MCP server (default behavior)
 ./target/release/rescue-groups-mcp server
 
+# Start the MCP server in HTTP mode
+./target/release/rescue-groups-mcp http --port 8080 --auth-token mysecrettoken
+
 # Generate shell completions (bash, zsh, fish, powershell, elvish)
 ./target/release/rescue-groups-mcp generate --shell bash > completion.bash
 
