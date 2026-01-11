@@ -333,9 +333,9 @@ fn format_contact_info(data: &Value) -> Result<String, Box<dyn Error + Send + Sy
     let mut contact_info = format!("## Contact Information for {}\n\n", animal_name);
 
     // Try to find org info in "included"
-    let org = data.get("included").and_then(|inc| {
-        inc.as_array()?.iter().find(|item| item["type"] == "orgs")
-    });
+    let org = data
+        .get("included")
+        .and_then(|inc| inc.as_array()?.iter().find(|item| item["type"] == "orgs"));
 
     if let Some(o) = org {
         let attrs = &o["attributes"];
@@ -354,7 +354,9 @@ fn format_contact_info(data: &Value) -> Result<String, Box<dyn Error + Send + Sy
             contact_info.push_str(&format!("**Website:** [{}]({})\n", url, url));
         }
     } else {
-        contact_info.push_str("Detailed organization contact information is not available for this animal.\n");
+        contact_info.push_str(
+            "Detailed organization contact information is not available for this animal.\n",
+        );
     }
 
     let animal_url = animal_attrs["url"].as_str().unwrap_or("");
@@ -654,7 +656,10 @@ async fn get_contact_info(
     settings: &Settings,
     args: AnimalIdArgs,
 ) -> Result<Value, Box<dyn Error + Send + Sync>> {
-    let url = format!("{}/public/animals/{}?include=orgs", settings.base_url, args.animal_id);
+    let url = format!(
+        "{}/public/animals/{}?include=orgs",
+        settings.base_url, args.animal_id
+    );
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
@@ -2376,6 +2381,8 @@ mod tests {
         assert!(result.contains("**Email:** contact@rescue.org"));
         assert!(result.contains("**Phone:** 555-5555"));
         assert!(result.contains("**Location:** Shelter City, ST"));
-        assert!(result.contains("[View adoption application or more info on RescueGroups](https://buddy-link)"));
+        assert!(result.contains(
+            "[View adoption application or more info on RescueGroups](https://buddy-link)"
+        ));
     }
 }
