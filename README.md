@@ -56,6 +56,9 @@ The application can be used directly from the command line for quick searches an
 # Search for cats near 90210
 ./target/release/rescue-groups-mcp search --species cats --postal-code 90210
 
+# Get raw JSON output (useful for scripting with jq)
+./target/release/rescue-groups-mcp search --species cats --json | jq .
+
 # List available species
 ./target/release/rescue-groups-mcp list-species
 
