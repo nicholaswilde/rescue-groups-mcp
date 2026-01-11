@@ -103,6 +103,39 @@ Generate and view the manual page for the CLI.
 man ./man/rescue-groups-mcp.1
 ```
 
+### :whale: Docker
+
+You can run the server using Docker or Docker Compose.
+
+#### Using Docker Compose
+
+1.  Configure your API key in `compose.yaml`.
+2.  Run the container:
+
+```bash
+docker compose up -d
+```
+
+#### Using Docker CLI
+
+Build the image:
+
+```bash
+docker build -t rescue-groups-mcp .
+```
+
+Run the container (MCP Mode):
+
+```bash
+docker run -i --rm -e RESCUE_GROUPS_API_KEY=your_key rescue-groups-mcp
+```
+
+Run the container (HTTP Mode):
+
+```bash
+docker run -d -p 8080:8080 -e RESCUE_GROUPS_API_KEY=your_key rescue-groups-mcp http --port 8080
+```
+
 ### :speech_balloon: MCP Server Mode
 
 To usage with an LLM, simply run the binary without arguments (or with `server`). It will listen on Stdio for JSON-RPC messages.
