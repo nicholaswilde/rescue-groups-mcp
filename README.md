@@ -107,6 +107,32 @@ man ./man/rescue-groups-mcp.1
 
 To usage with an LLM, simply run the binary without arguments (or with `server`). It will listen on Stdio for JSON-RPC messages.
 
+### :config: Client Configuration
+
+#### Claude Desktop
+Add this to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "rescue-groups": {
+      "command": "/absolute/path/to/target/release/rescue-groups-mcp",
+      "args": ["server"],
+      "env": {
+        "RESCUE_GROUPS_API_KEY": "your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+#### Claude CLI (Claude Code)
+Add the server using the `claude` command:
+
+```bash
+claude mcp add rescue-groups-mcp -- server --env RESCUE_GROUPS_API_KEY=your_api_key_here
+```
+
 ### :gear: Configuration File
 
 The server can load configuration from a file named `config.toml`, `config.yaml`, or `config.json` in the current directory, or via the `--config` flag. See `config.toml.example` for details.
