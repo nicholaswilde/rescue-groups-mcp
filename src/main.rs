@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::error::Error;
@@ -22,14 +22,37 @@ struct ConfigFile {
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Cli {
-    #[arg(short, long)]
-    miles: Option<u32>,
-    #[arg(short, long)]
-    species: Option<String>,
     #[arg(long, env = "RESCUE_GROUPS_API_KEY", hide_env_values = true)]
     api_key: Option<String>,
     #[arg(long, default_value = "config.toml")]
     config: String,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum Commands {
+    /// Start the MCP server (default)
+    Server,
+    /// Search for adoptable pets
+    Search(ToolArgs),
+    /// List available species
+    ListSpecies,
+    /// Get details for a specific animal
+    GetAnimal(AnimalIdArgs),
+    /// Search for rescue organizations
+    SearchOrgs(OrgSearchArgs),
+    /// Get details for a specific organization
+    GetOrg(OrgIdArgs),
+    /// List animals at a specific organization
+    ListOrgAnimals(OrgIdArgs),
+    /// List recently adopted animals (Success Stories)
+    ListAdopted(AdoptedAnimalsArgs),
+    /// List available breeds for a species
+    ListBreeds(SpeciesArgs),
+    /// List metadata values (colors, patterns, etc.)
+    ListMetadata(MetadataArgs),
 }
 
 #[derive(Clone)]
@@ -78,13 +101,13 @@ fn merge_configuration(cli: Cli) -> Result<Settings, Box<dyn Error>> {
             .as_ref()
             .and_then(|c| c.postal_code.clone())
             .unwrap_or_else(|| "90210".to_string()),
-        default_miles: cli
-            .miles
-            .or(file_config.as_ref().and_then(|c| c.miles))
+        default_miles: file_config
+            .as_ref()
+            .and_then(|c| c.miles)
             .unwrap_or(50),
-        default_species: cli
-            .species
-            .or(file_config.as_ref().and_then(|c| c.species.clone()))
+        default_species: file_config
+            .as_ref()
+            .and_then(|c| c.species.clone())
             .unwrap_or_else(|| "dogs".to_string()),
         cache: Arc::new(cache),
     })
@@ -139,52 +162,73 @@ async fn fetch_with_cache(
 // 2. CORE LOGIC (The Search Function)
 // =========================================================================
 
-#[derive(Deserialize, Clone)]
+#[derive(Args, Deserialize, Clone, Debug)]
 struct ToolArgs {
+    #[arg(long)]
     postal_code: Option<String>,
+    #[arg(long)]
     miles: Option<u32>,
+    #[arg(long)]
     species: Option<String>,
+    #[arg(long)]
     sex: Option<String>,
+    #[arg(long)]
     age: Option<String>,
+    #[arg(long)]
     size: Option<String>,
+    #[arg(long)]
     good_with_children: Option<bool>,
+    #[arg(long)]
     good_with_dogs: Option<bool>,
+    #[arg(long)]
     good_with_cats: Option<bool>,
+    #[arg(long)]
     house_trained: Option<bool>,
+    #[arg(long)]
     special_needs: Option<bool>,
+    #[arg(long)]
     sort_by: Option<String>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Args, Deserialize, Clone, Debug)]
 struct AnimalIdArgs {
+    #[arg(long)]
     animal_id: String,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Args, Deserialize, Clone, Debug)]
 struct SpeciesArgs {
+    #[arg(long)]
     species: String,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Args, Deserialize, Clone, Debug)]
 struct OrgSearchArgs {
+    #[arg(long)]
     postal_code: Option<String>,
+    #[arg(long)]
     miles: Option<u32>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Args, Deserialize, Clone, Debug)]
 struct OrgIdArgs {
+    #[arg(long)]
     org_id: String,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Args, Deserialize, Clone, Debug)]
 struct AdoptedAnimalsArgs {
+    #[arg(long)]
     postal_code: Option<String>,
+    #[arg(long)]
     miles: Option<u32>,
+    #[arg(long)]
     species: Option<String>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Args, Deserialize, Clone, Debug)]
 struct MetadataArgs {
+    #[arg(long)]
     metadata_type: String,
 }
 
@@ -661,38 +705,115 @@ struct JsonRpcRequest {
 async fn main() -> Result<(), Box<dyn Error>> {
     // 1. Load Settings
     let cli = Cli::parse();
+    // Clone command to use after merge_configuration (which consumes cli)
+    let command = cli.command.clone();
     let settings = merge_configuration(cli)?;
 
-    // 2. Setup Stdio
-    let stdin = io::stdin();
-    let mut reader = stdin.lock();
-    let mut line = String::new();
+    match command {
+        Some(Commands::Server) | None => {
+            // 2. Setup Stdio
+            let stdin = io::stdin();
+            let mut reader = stdin.lock();
+            let mut line = String::new();
 
-    eprintln!("RescueGroups MCP Server running...");
+            eprintln!("RescueGroups MCP Server running...");
 
-    // 3. Main Loop
-    loop {
-        line.clear();
-        if reader.read_line(&mut line)? == 0 {
-            break;
-        } // EOF
+            // 3. Main Loop
+            loop {
+                line.clear();
+                if reader.read_line(&mut line)? == 0 {
+                    break;
+                } // EOF
 
-        let req: JsonRpcRequest = match serde_json::from_str(&line) {
-            Ok(r) => r,
-            Err(_) => continue, // Ignore malformed lines
-        };
+                let req: JsonRpcRequest = match serde_json::from_str(&line) {
+                    Ok(r) => r,
+                    Err(_) => continue, // Ignore malformed lines
+                };
+                
+                // ... (rest of the MCP loop logic - I will insert it here)
+                let response = process_mcp_request(req, &settings).await;
 
-        let response = match req.method.as_str() {
-            "initialize" => json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": { "tools": {} },
-                "serverInfo": { "name": "rescue-groups-mcp", "version": "0.1.0" }
-            }),
+                if let Some(id) = response.0 {
+                    let output = json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": response.1
+                    });
+                    println!("{}", output);
+                    io::stdout().flush()?;
+                }
+            }
+        }
+        Some(Commands::Search(args)) => {
+            match fetch_pets(&settings, args).await {
+                Ok(result) => println!("{}", result),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+        Some(Commands::ListSpecies) => {
+            match list_species(&settings).await {
+                Ok(result) => println!("{}", result),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+        Some(Commands::GetAnimal(args)) => {
+            match get_animal_details(&settings, args).await {
+                Ok(result) => println!("{}", result),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+        Some(Commands::SearchOrgs(args)) => {
+            match search_organizations(&settings, args).await {
+                Ok(result) => println!("{}", result),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+        Some(Commands::GetOrg(args)) => {
+            match get_organization_details(&settings, args).await {
+                Ok(result) => println!("{}", result),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+        Some(Commands::ListOrgAnimals(args)) => {
+            match list_org_animals(&settings, args).await {
+                Ok(result) => println!("{}", result),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+        Some(Commands::ListAdopted(args)) => {
+            match fetch_adopted_pets(&settings, args).await {
+                Ok(result) => println!("{}", result),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+        Some(Commands::ListBreeds(args)) => {
+            match list_breeds(&settings, args).await {
+                Ok(result) => println!("{}", result),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+        Some(Commands::ListMetadata(args)) => {
+            match list_metadata(&settings, args).await {
+                Ok(result) => println!("{}", result),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+    }
+    Ok(())
+}
 
-            "notifications/initialized" => continue,
+async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Option<Value>, Value) {
+    let response = match req.method.as_str() {
+        "initialize" => json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": { "tools": {} },
+            "serverInfo": { "name": "rescue-groups-mcp", "version": "0.1.0" }
+        }),
 
-            "tools/list" => json!({
-                "tools": [
+        "notifications/initialized" => return (None, json!({})), // Notification, no response
+
+        "tools/list" => json!({
+            "tools": [
                     {
                         "name": "list_animals",
                         "description": "List the most recent adoptable animals available globally.",
@@ -815,202 +936,192 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
                     }
-                ]
-            }),
+            ]
+        }),
 
-            "tools/call" => {
-                if let Some(params) = req.params {
-                    let name = params["name"].as_str().unwrap_or("");
-                    match name {
-                        "list_animals" => match list_animals(&settings).await {
+        "tools/call" => {
+            if let Some(params) = req.params {
+                let name = params["name"].as_str().unwrap_or("");
+                match name {
+                    "list_animals" => match list_animals(settings).await {
+                        Ok(content) => {
+                            json!({ "content": [{ "type": "text", "text": content }] })
+                        }
+                        Err(e) => {
+                            json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                        }
+                    },
+                    "list_species" => match list_species(settings).await {
+                        Ok(content) => {
+                            json!({ "content": [{ "type": "text", "text": content }] })
+                        }
+                        Err(e) => {
+                            json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                        }
+                    },
+                    "list_metadata" => {
+                        let args: MetadataArgs = serde_json::from_value(params["arguments"].clone())
+                            .unwrap_or(MetadataArgs {
+                                metadata_type: "colors".to_string(),
+                            });
+
+                        match list_metadata(settings, args).await {
                             Ok(content) => {
                                 json!({ "content": [{ "type": "text", "text": content }] })
                             }
                             Err(e) => {
                                 json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
                             }
-                        },
-                        "list_species" => match list_species(&settings).await {
+                        }
+                    },
+                    "list_breeds" => {
+                        let args: SpeciesArgs = serde_json::from_value(
+                            params["arguments"].clone(),
+                        )
+                        .unwrap_or(SpeciesArgs {
+                            species: settings.default_species.clone(),
+                        });
+
+                        match list_breeds(settings, args).await {
                             Ok(content) => {
                                 json!({ "content": [{ "type": "text", "text": content }] })
                             }
                             Err(e) => {
                                 json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
                             }
-                        },
-                        "list_metadata" => {
-                            let args: MetadataArgs = serde_json::from_value(params["arguments"].clone())
-                                .unwrap_or(MetadataArgs {
-                                    metadata_type: "colors".to_string(),
-                                });
-
-                            match list_metadata(&settings, args).await {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                                }
-                            }
-                        },
-                        "list_breeds" => {
-                            let args: SpeciesArgs = serde_json::from_value(
-                                params["arguments"].clone(),
-                            )
-                            .unwrap_or(SpeciesArgs {
-                                species: settings.default_species.clone(),
-                            });
-
-                            match list_breeds(&settings, args).await {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                                }
-                            }
-                        }
-                        "get_animal_details" => {
-                            let args: AnimalIdArgs = serde_json::from_value(
-                                params["arguments"].clone(),
-                            )
-                            .unwrap_or(AnimalIdArgs {
-                                animal_id: "0".to_string(),
-                            });
-
-                            match get_animal_details(&settings, args).await {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                                }
-                            }
-                        }
-                        "search_organizations" => {
-                            let args: OrgSearchArgs = serde_json::from_value(
-                                params["arguments"].clone(),
-                            )
-                            .unwrap_or(OrgSearchArgs {
-                                postal_code: None,
-                                miles: None,
-                            });
-
-                            match search_organizations(&settings, args).await {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                                }
-                            }
-                        }
-                        "get_organization_details" => {
-                            let args: OrgIdArgs = serde_json::from_value(
-                                params["arguments"].clone(),
-                            )
-                            .unwrap_or(OrgIdArgs {
-                                org_id: "0".to_string(),
-                            });
-
-                            match get_organization_details(&settings, args).await {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                                }
-                            }
-                        }
-                        "list_org_animals" => {
-                            let args: OrgIdArgs = serde_json::from_value(
-                                params["arguments"].clone(),
-                            )
-                            .unwrap_or(OrgIdArgs {
-                                org_id: "0".to_string(),
-                            });
-
-                            match list_org_animals(&settings, args).await {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                                }
-                            }
-                        }
-                        "search_adoptable_pets" => {
-                            let args: ToolArgs = serde_json::from_value(
-                                params["arguments"].clone(),
-                            )
-                            .unwrap_or(ToolArgs {
-                                postal_code: None,
-                                miles: None,
-                                species: None,
-                                sex: None,
-                                age: None,
-                                size: None,
-                                good_with_children: None,
-                                good_with_dogs: None,
-                                good_with_cats: None,
-                                house_trained: None,
-                                special_needs: None,
-                                sort_by: None,
-                            });
-
-                            match fetch_pets(&settings, args).await {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                                }
-                            }
-                        }
-                        "list_adopted_animals" => {
-                            let args: AdoptedAnimalsArgs = serde_json::from_value(
-                                params["arguments"].clone(),
-                            )
-                            .unwrap_or(AdoptedAnimalsArgs {
-                                postal_code: None,
-                                miles: None,
-                                species: None,
-                            });
-
-                            match fetch_adopted_pets(&settings, args).await {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                                }
-                            }
-                        }
-                        _ => {
-                            json!({ "content": [{ "type": "text", "text": "Tool not found" }], "isError": true })
                         }
                     }
-                } else {
-                    json!({ "isError": true })
+                    "get_animal_details" => {
+                        let args: AnimalIdArgs = serde_json::from_value(
+                            params["arguments"].clone(),
+                        )
+                        .unwrap_or(AnimalIdArgs {
+                            animal_id: "0".to_string(),
+                        });
+
+                        match get_animal_details(settings, args).await {
+                            Ok(content) => {
+                                json!({ "content": [{ "type": "text", "text": content }] })
+                            }
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
+                        }
+                    }
+                    "search_organizations" => {
+                        let args: OrgSearchArgs = serde_json::from_value(
+                            params["arguments"].clone(),
+                        )
+                        .unwrap_or(OrgSearchArgs {
+                            postal_code: None,
+                            miles: None,
+                        });
+
+                        match search_organizations(settings, args).await {
+                            Ok(content) => {
+                                json!({ "content": [{ "type": "text", "text": content }] })
+                            }
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
+                        }
+                    }
+                    "get_organization_details" => {
+                        let args: OrgIdArgs = serde_json::from_value(
+                            params["arguments"].clone(),
+                        )
+                        .unwrap_or(OrgIdArgs {
+                            org_id: "0".to_string(),
+                        });
+
+                        match get_organization_details(settings, args).await {
+                            Ok(content) => {
+                                json!({ "content": [{ "type": "text", "text": content }] })
+                            }
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
+                        }
+                    }
+                    "list_org_animals" => {
+                        let args: OrgIdArgs = serde_json::from_value(
+                            params["arguments"].clone(),
+                        )
+                        .unwrap_or(OrgIdArgs {
+                            org_id: "0".to_string(),
+                        });
+
+                        match list_org_animals(settings, args).await {
+                            Ok(content) => {
+                                json!({ "content": [{ "type": "text", "text": content }] })
+                            }
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
+                        }
+                    }
+                    "search_adoptable_pets" => {
+                        let args: ToolArgs = serde_json::from_value(
+                            params["arguments"].clone(),
+                        )
+                        .unwrap_or(ToolArgs {
+                            postal_code: None,
+                            miles: None,
+                            species: None,
+                            sex: None,
+                            age: None,
+                            size: None,
+                            good_with_children: None,
+                            good_with_dogs: None,
+                            good_with_cats: None,
+                            house_trained: None,
+                            special_needs: None,
+                            sort_by: None,
+                        });
+
+                        match fetch_pets(settings, args).await {
+                            Ok(content) => {
+                                json!({ "content": [{ "type": "text", "text": content }] })
+                            }
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
+                        }
+                    }
+                    "list_adopted_animals" => {
+                        let args: AdoptedAnimalsArgs = serde_json::from_value(
+                            params["arguments"].clone(),
+                        )
+                        .unwrap_or(AdoptedAnimalsArgs {
+                            postal_code: None,
+                            miles: None,
+                            species: None,
+                        });
+
+                        match fetch_adopted_pets(settings, args).await {
+                            Ok(content) => {
+                                json!({ "content": [{ "type": "text", "text": content }] })
+                            }
+                            Err(e) => {
+                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                            }
+                        }
+                    }
+                    _ => {
+                        json!({ "content": [{ "type": "text", "text": "Tool not found" }], "isError": true })
+                    }
                 }
+            } else {
+                json!({ "isError": true })
             }
-
-            "ping" => json!({}),
-
-            _ => json!({ "error": { "code": -32601, "message": "Method not found" } }),
-        };
-
-        if let Some(id) = req.id {
-            let output = json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": response
-            });
-            println!("{}", output);
-            io::stdout().flush()?;
         }
-    }
-    Ok(())
+
+        "ping" => json!({}),
+
+        _ => json!({ "error": { "code": -32601, "message": "Method not found" } }),
+    };
+
+    (req.id, response)
 }
 
 #[cfg(test)]
@@ -1020,10 +1131,9 @@ mod tests {
     #[test]
     fn test_merge_configuration_defaults() {
         let cli = Cli {
-            miles: None,
-            species: None,
             api_key: Some("test_key".to_string()),
             config: "non_existent.toml".to_string(),
+            command: None,
         };
         let settings = merge_configuration(cli).unwrap();
         assert_eq!(settings.api_key, "test_key");

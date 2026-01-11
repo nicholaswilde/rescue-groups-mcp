@@ -48,11 +48,24 @@ cargo test
 
 ## :rocket: Usage
 
-### :keyboard: Command Line Arguments
+### :computer: CLI Mode
+
+The application can be used directly from the command line for quick searches and debugging.
 
 ```bash
-./target/rescue-groups-mcp --help
+# Search for cats near 90210
+./target/release/rescue-groups-mcp search --species cats --postal-code 90210
+
+# List available species
+./target/release/rescue-groups-mcp list-species
+
+# Start the MCP server (default behavior)
+./target/release/rescue-groups-mcp server
 ```
+
+### :speech_balloon: MCP Server Mode
+
+To usage with an LLM, simply run the binary without arguments (or with `server`). It will listen on Stdio for JSON-RPC messages.
 
 ### :gear: Configuration File
 
