@@ -5,7 +5,7 @@
 > [!WARNING]
 > This project is currently in active development (v0.x.x) and is **not production-ready**. Features may change, and breaking changes may occur without notice.
 
-An MCP server to interface with [RescueGroups][3] written in Rust.
+An [MCP server](https://modelcontextprotocol.io/docs/getting-started/intro) to interface with [RescueGroups][3] written in Rust.
 
 You will need to request an [API key][1] from the group.
 
