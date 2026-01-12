@@ -300,6 +300,14 @@ struct MetadataArgs {
     metadata_type: String,
 }
 
+fn extract_single_item(data: &Value) -> Option<&Value> {
+    match data {
+        Value::Array(arr) => arr.first(),
+        Value::Object(_) => Some(data),
+        _ => None,
+    }
+}
+
 fn format_single_animal(animal: &Value) -> String {
     let attrs = &animal["attributes"];
     let name = attrs["name"].as_str().unwrap_or("Unknown");
@@ -326,7 +334,9 @@ fn format_single_animal(animal: &Value) -> String {
 }
 
 fn format_contact_info(data: &Value) -> Result<String, Box<dyn Error + Send + Sync>> {
-    let animal = data.get("data").ok_or("No animal data found")?;
+    let animal_data = data.get("data").ok_or("No animal data found")?;
+    let animal = extract_single_item(animal_data).ok_or("No animal data found")?;
+
     let animal_attrs = &animal["attributes"];
     let animal_name = animal_attrs["name"].as_str().unwrap_or("this pet");
 
@@ -616,9 +626,34 @@ async fn list_breeds(
     settings: &Settings,
     args: SpeciesArgs,
 ) -> Result<Value, Box<dyn Error + Send + Sync>> {
+    let species_id = if args.species.chars().all(char::is_numeric) {
+        args.species
+    } else {
+        // Try to resolve name to ID
+        let species_list = list_species(settings).await?;
+        let data = species_list
+            .get("data")
+            .and_then(|d| d.as_array())
+            .ok_or("Failed to fetch species list for resolution")?;
+
+        let target = args.species.to_lowercase();
+        let found = data.iter().find(|s| {
+            let attrs = &s["attributes"];
+            let singular = attrs["singular"].as_str().unwrap_or("").to_lowercase();
+            let plural = attrs["plural"].as_str().unwrap_or("").to_lowercase();
+            singular == target || plural == target
+        });
+
+        if let Some(s) = found {
+            s["id"].as_str().unwrap_or("").to_string()
+        } else {
+            return Err(format!("Species '{}' not found", args.species).into());
+        }
+    };
+
     let url = format!(
         "{}/public/animals/species/{}/breeds",
-        settings.base_url, args.species
+        settings.base_url, species_id
     );
     fetch_with_cache(settings, &url, "GET", None).await
 }
@@ -692,7 +727,9 @@ async fn compare_animals(
         match res {
             Ok(val) => {
                 if let Some(data) = val.get("data") {
-                    valid_animals.push(data.clone());
+                    if let Some(animal) = extract_single_item(data) {
+                        valid_animals.push(animal.clone());
+                    }
                 }
             }
             Err(e) => errors.push(e.to_string()),
@@ -1052,7 +1089,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
         Some(Commands::GetAnimal(args)) => {
             print_output(get_animal_details(&settings, args).await, cli.json, |v| {
-                let animal = v.get("data").ok_or("No animal data found")?;
+                let animal_data = v.get("data").ok_or("No animal data found")?;
+                let animal = extract_single_item(animal_data).ok_or("No animal data found")?;
                 Ok(format_single_animal(animal))
             });
         }
@@ -1076,7 +1114,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 get_organization_details(&settings, args).await,
                 cli.json,
                 |v| {
-                    let org = v.get("data").ok_or("No organization data found")?;
+                    let org_data = v.get("data").ok_or("No organization data found")?;
+                    let org = extract_single_item(org_data).ok_or("No organization data found")?;
                     Ok(format_single_org(org))
                 },
             );
@@ -1374,12 +1413,12 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
 
                         match get_animal_details(settings, args).await {
                             Ok(data) => {
-                                let animal = data.get("data").ok_or("No animal data found");
-                                match animal {
-                                    Ok(a) => {
+                                let animal_data = data.get("data");
+                                match animal_data.and_then(|d| extract_single_item(d)) {
+                                    Some(a) => {
                                         json!({ "content": [{ "type": "text", "text": format_single_animal(a) }] })
                                     }
-                                    Err(_) => {
+                                    None => {
                                         json!({ "content": [{ "type": "text", "text": "Animal not found" }], "isError": true })
                                     }
                                 }
@@ -1460,12 +1499,12 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
 
                         match get_organization_details(settings, args).await {
                             Ok(data) => {
-                                let org = data.get("data").ok_or("No organization data found");
-                                match org {
-                                    Ok(o) => {
+                                let org_data = data.get("data");
+                                match org_data.and_then(|d| extract_single_item(d)) {
+                                    Some(o) => {
                                         json!({ "content": [{ "type": "text", "text": format_single_org(o) }] })
                                     }
-                                    Err(_) => {
+                                    None => {
                                         json!({ "content": [{ "type": "text", "text": "Organization not found" }], "isError": true })
                                     }
                                 }
@@ -1637,18 +1676,39 @@ mod tests {
     #[tokio::test]
     async fn test_list_breeds_mock() {
         let mut server = mockito::Server::new_async().await;
-        let body = json!({
+
+        // Mock species list
+        let species_body = json!({
+            "data": [
+                {
+                    "id": "8",
+                    "attributes": {
+                        "singular": "Dog",
+                        "plural": "Dogs"
+                    }
+                }
+            ]
+        });
+        let _m_species = server
+            .mock("GET", "/public/animals/species")
+            .with_status(200)
+            .with_header("content-type", "application/vnd.api+json")
+            .with_body(serde_json::to_string(&species_body).unwrap())
+            .create_async()
+            .await;
+
+        let breeds_body = json!({
             "data": [
                 { "attributes": { "name": "Labrador" } },
                 { "attributes": { "name": "Beagle" } }
             ]
         });
 
-        let _m = server
-            .mock("GET", "/public/animals/species/dogs/breeds")
+        let _m_breeds = server
+            .mock("GET", "/public/animals/species/8/breeds")
             .with_status(200)
             .with_header("content-type", "application/vnd.api+json")
-            .with_body(serde_json::to_string(&body).unwrap())
+            .with_body(serde_json::to_string(&breeds_body).unwrap())
             .create_async()
             .await;
 
