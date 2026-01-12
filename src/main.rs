@@ -232,6 +232,8 @@ struct ToolArgs {
     #[arg(long)]
     species: Option<String>,
     #[arg(long)]
+    breeds: Option<String>,
+    #[arg(long)]
     sex: Option<String>,
     #[arg(long)]
     age: Option<String>,
@@ -810,6 +812,18 @@ async fn fetch_pets(
 
     let mut filters = Vec::new();
 
+    if let Some(breeds) = &args.breeds {
+        // Handle multiple breeds if separated by comma? The API usually takes an array for "oneOf" or "equal" if singular.
+        // For simplicity, let's assume a single breed string or comma-separated for "contain" or similar?
+        // RescueGroups filter usually works with ID or Name. Let's try name "contain" or "equal".
+        // "breeds.name" is the field.
+        filters.push(json!({
+            "fieldName": "breeds.name",
+            "operation": "contains",
+            "criteria": breeds
+        }));
+    }
+
     if let Some(sex) = args.sex {
         filters.push(json!({
             "fieldName": "animals.sex",
@@ -1299,6 +1313,7 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                             "properties": {
                                 "postal_code": { "type": "string", "description": "Zip code (e.g. 90210)" },
                                 "species": { "type": "string", "description": "Type of animal (dogs, cats, rabbits)" },
+                                "breeds": { "type": "string", "description": "Specific breed name (e.g. Golden Retriever)" },
                                 "miles": { "type": "integer", "description": "Search radius (default 50)" },
                                 "sex": { "type": "string", "description": "Sex of the animal (Male, Female)" },
                                 "age": { "type": "string", "description": "Age group (Baby, Young, Adult, Senior)" },
@@ -1540,6 +1555,7 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                                 postal_code: None,
                                 miles: None,
                                 species: None,
+                                breeds: None,
                                 sex: None,
                                 age: None,
                                 size: None,
@@ -2075,6 +2091,7 @@ mod tests {
             postal_code: Some("90210".to_string()),
             miles: Some(50),
             species: Some("dogs".to_string()),
+            breeds: None,
             sex: Some("Female".to_string()),
             age: Some("Senior".to_string()),
             size: None,
@@ -2153,6 +2170,7 @@ mod tests {
             postal_code: Some("90210".to_string()),
             miles: Some(50),
             species: Some("dogs".to_string()),
+            breeds: None,
             sex: None,
             age: None,
             size: None,
@@ -2210,6 +2228,7 @@ mod tests {
             postal_code: Some("90210".to_string()),
             miles: Some(50),
             species: Some("dogs".to_string()),
+            breeds: None,
             sex: None,
             age: None,
             size: None,
