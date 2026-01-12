@@ -8,3 +8,4 @@
 - Implemented `compare_animals` tool to allow side-by-side comparison of up to 5 animals, including a Markdown table formatter.
 - Implemented `get_contact_info` tool which uses the `?include=orgs` API parameter to retrieve animal-specific rescue contact details (Email, Phone, Org website).
 - Fixed `Send + Sync` trait bound issues in `axum` handlers by updating `Box<dyn Error>` to `Box<dyn Error + Send + Sync>` globally.
+- Fixed Docker build error "Missing dependency: cmake" by installing `cmake` in the `Dockerfile`, required for `aws-lc-sys` compilation.

@@ -40,6 +40,11 @@ tasks:
       - task: build:amd64
       - task: build:arm64
 
+  build:armv7:
+    desc: Build for ARMv7
+    cmds:
+      - cross build --release --target armv7-unknown-linux-gnueabihf
+
   build:amd64:
     desc: Build for AMD64
     cmds:
@@ -63,7 +68,7 @@ tasks:
   docker:build:
     desc: Build the Docker image
     cmds:
-      - docker buildx build --platform linux/amd64,linux/arm64 -t rescue-groups-mcp .
+      - docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t rescue-groups-mcp .
 
   docker:run:
     desc: Run the Docker image
