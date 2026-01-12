@@ -45,7 +45,7 @@ struct ConfigFile {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about)]
+#[command(author, version = env!("PROJECT_VERSION"), about)]
 struct Cli {
     #[arg(long, env = "RESCUE_GROUPS_API_KEY", hide_env_values = true)]
     api_key: Option<String>,
@@ -1173,7 +1173,7 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
         "initialize" => json!({
             "protocolVersion": "2024-11-05",
             "capabilities": { "tools": {} },
-            "serverInfo": { "name": "rescue-groups-mcp", "version": "0.1.0" }
+            "serverInfo": { "name": "rescue-groups-mcp", "version": env!("PROJECT_VERSION") }
         }),
 
         "notifications/initialized" => return (None, json!({})), // Notification, no response
