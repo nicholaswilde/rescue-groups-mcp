@@ -1,0 +1,8 @@
+{
+  "track_id": "refine_error_async_20260117",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-01-17T12:00:00Z",
+  "updated_at": "2026-01-17T12:00:00Z",
+  "description": "Improve error reporting for MCP clients and refine asynchronous task handling for long-running operations."
+}
