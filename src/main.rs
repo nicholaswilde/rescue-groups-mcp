@@ -23,12 +23,60 @@ use std::io::{self, BufRead, Write};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
+use thiserror::Error as ThisError;
 use tokio::sync::{mpsc, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 
 type SessionSender = mpsc::UnboundedSender<Result<Event, Infallible>>;
 type SessionsMap = Arc<RwLock<HashMap<String, SessionSender>>>;
+
+// =========================================================================
+// 0. ERROR HANDLING
+// =========================================================================
+
+#[derive(ThisError, Debug)]
+pub enum AppError {
+    #[error("API Error: {0}")]
+    ApiError(String),
+
+    #[error("Configuration Error: {0}")]
+    ConfigError(String),
+
+    #[error("Resource Not Found")]
+    NotFound,
+
+    #[error("Internal Error: {0}")]
+    Internal(String),
+
+    #[error("IO Error: {0}")]
+    Io(#[from] io::Error),
+
+    #[error("Network Error: {0}")]
+    Network(#[from] reqwest::Error),
+
+    #[error("Serialization Error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    #[error("TOML Error: {0}")]
+    Toml(#[from] toml::de::Error),
+
+    #[error("YAML Error: {0}")]
+    Yaml(#[from] serde_yaml::Error),
+}
+
+// Implement conversion for Box<dyn Error + Send + Sync> to make refactoring easier
+impl From<String> for AppError {
+    fn from(s: String) -> Self {
+        AppError::Internal(s)
+    }
+}
+
+impl From<&str> for AppError {
+    fn from(s: &str) -> Self {
+        AppError::Internal(s.to_string())
+    }
+}
 
 // ... (rest of imports if any)
 
@@ -2463,5 +2511,31 @@ mod tests {
         assert!(result.contains(
             "[View adoption application or more info on RescueGroups](https://buddy-link)"
         ));
+    }
+
+    #[test]
+    fn test_app_error_display() {
+        let err = AppError::ApiError("Not Found".to_string());
+        assert_eq!(format!("{}", err), "API Error: Not Found");
+
+        let err = AppError::ConfigError("Missing key".to_string());
+        assert_eq!(format!("{}", err), "Configuration Error: Missing key");
+
+        let err = AppError::NotFound;
+        assert_eq!(format!("{}", err), "Resource Not Found");
+
+        let err = AppError::Internal("test".to_string());
+        assert_eq!(format!("{}", err), "Internal Error: test");
+    }
+
+    #[test]
+    fn test_app_error_conversions() {
+        let io_err = io::Error::new(io::ErrorKind::NotFound, "not found");
+        let app_err: AppError = io_err.into();
+        assert!(matches!(app_err, AppError::Io(_)));
+
+        let s = "test error";
+        let app_err: AppError = s.into();
+        assert!(matches!(app_err, AppError::Internal(_)));
     }
 }
