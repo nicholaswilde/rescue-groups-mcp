@@ -2,9 +2,9 @@
 
 ## Phase 1: Error Handling Refinement
 
-- [ ] Task: Define comprehensive Error types
-    - [ ] Write unit tests for new `AppError` enum and its variants
-    - [ ] Implement `AppError` and `From` conversions for common external errors
+- [x] Task: Define comprehensive Error types 2c0d123
+    - [x] Write unit tests for new `AppError` enum and its variants
+    - [x] Implement `AppError` and `From` conversions for common external errors
 - [ ] Task: Enhance JSON-RPC error mapping
     - [ ] Write tests for error-to-JSON-RPC mapping logic
     - [ ] Implement mapping in the server's response handling
