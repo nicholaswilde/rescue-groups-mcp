@@ -1158,7 +1158,7 @@ fn get_all_tool_definitions() -> Vec<Value> {
 
 fn get_core_tool_definitions() -> Vec<Value> {
     let all = get_all_tool_definitions();
-    let core_names = vec![
+    let core_names = [
         "search_adoptable_pets",
         "get_animal_details",
         "inspect_tool",
@@ -1654,7 +1654,9 @@ async fn handle_tool_call(
                 // Find specific tool
                 let tools = get_all_tool_definitions();
                 if let Some(tool) = tools.iter().find(|t| t["name"].as_str() == Some(name)) {
-                    Ok(json!({ "content": [{ "type": "text", "text": serde_json::to_string_pretty(tool).unwrap() }] }))
+                    Ok(
+                        json!({ "content": [{ "type": "text", "text": serde_json::to_string_pretty(tool).unwrap() }] }),
+                    )
                 } else {
                     Err(AppError::NotFound) // Tool not found
                 }
@@ -1700,7 +1702,7 @@ async fn process_mcp_request(
                 get_all_tool_definitions()
             };
             Ok(json!({ "tools": tools }))
-        },
+        }
 
         "tools/call" => {
             if let Some(params) = req.params {
@@ -2789,13 +2791,17 @@ mod tests {
         };
 
         // Inspect all
-        let val = handle_tool_call("inspect_tool", None, &settings).await.unwrap();
+        let val = handle_tool_call("inspect_tool", None, &settings)
+            .await
+            .unwrap();
         let text = val["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("list_species"));
 
         // Inspect specific
         let params = json!({ "arguments": { "tool_name": "list_species" } });
-        let val = handle_tool_call("inspect_tool", Some(params), &settings).await.unwrap();
+        let val = handle_tool_call("inspect_tool", Some(params), &settings)
+            .await
+            .unwrap();
         let text = val["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("inputSchema"));
         assert!(text.contains("list_species"));
@@ -2810,7 +2816,8 @@ mod tests {
                 { "attributes": { "singular": "Dog" } }
             ]
         });
-        let _m = server.mock("GET", "/public/animals/species")
+        let _m = server
+            .mock("GET", "/public/animals/species")
             .with_status(200)
             .with_header("content-type", "application/vnd.api+json")
             .with_body(serde_json::to_string(&body).unwrap())
@@ -2841,7 +2848,7 @@ mod tests {
 
         let (_, resp) = process_mcp_request(req, &settings).await;
         let result = resp.unwrap();
-        
+
         // Should succeed despite being hidden in tools/list
         assert!(result.get("content").is_some());
         let text = result["content"][0]["text"].as_str().unwrap();
