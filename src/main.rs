@@ -116,6 +116,7 @@ struct ConfigFile {
     postal_code: Option<String>,
     species: Option<String>,
     miles: Option<u32>,
+    timeout_seconds: Option<u64>,
 }
 
 #[derive(Parser, Debug)]
@@ -199,6 +200,7 @@ struct Settings {
     default_postal_code: String,
     default_miles: u32,
     default_species: String,
+    timeout: std::time::Duration,
     cache: Arc<moka::future::Cache<String, Value>>,
 }
 
@@ -244,6 +246,12 @@ fn merge_configuration(cli: &Cli) -> Result<Settings, Box<dyn Error + Send + Syn
             .as_ref()
             .and_then(|c| c.species.clone())
             .unwrap_or_else(|| "dogs".to_string()),
+        timeout: std::time::Duration::from_secs(
+            file_config
+                .as_ref()
+                .and_then(|c| c.timeout_seconds)
+                .unwrap_or(30),
+        ),
         cache: Arc::new(cache),
     })
 }
@@ -265,7 +273,11 @@ async fn fetch_with_cache(
         return Ok(cached);
     }
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(settings.timeout)
+        .build()
+        .map_err(|e| AppError::Internal(format!("Failed to build client: {}", e)))?;
+
     let mut request = match method {
         "POST" => client.post(url),
         _ => client.get(url),
@@ -1752,6 +1764,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -1795,6 +1808,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -1835,6 +1849,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -1880,6 +1895,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -1928,6 +1944,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -1971,6 +1988,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2006,6 +2024,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2040,6 +2059,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2102,6 +2122,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2181,6 +2202,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2239,6 +2261,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2293,6 +2316,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2342,6 +2366,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2406,6 +2431,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2463,6 +2489,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2574,6 +2601,7 @@ mod tests {
             default_postal_code: "90210".to_string(),
             default_miles: 50,
             default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_secs(30),
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2591,5 +2619,37 @@ mod tests {
         
         assert_eq!(errors.len(), 1);
         assert!(errors[0].as_str().unwrap().contains("Resource Not Found"));
+    }
+
+    #[tokio::test]
+    async fn test_api_timeout() {
+        let mut server = mockito::Server::new_async().await;
+
+        let _m = server
+            .mock("GET", "/public/animals")
+            .with_status(200)
+            .with_body("[]")
+            .create_async()
+            .await;
+
+        let settings = Settings {
+            api_key: "test_key".to_string(),
+            base_url: server.url(),
+            default_postal_code: "90210".to_string(),
+            default_miles: 50,
+            default_species: "dogs".to_string(),
+            timeout: std::time::Duration::from_nanos(1), // Extremely short timeout
+            cache: Arc::new(moka::future::Cache::builder().build()),
+        };
+
+        // We expect this to fail
+        let result = list_animals(&settings).await;
+        
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            AppError::Network(e) => assert!(e.is_timeout(), "Expected timeout, got {:?}", e),
+            _ => panic!("Expected Network Error (Timeout), got {:?}", err),
+        }
     }
 }
