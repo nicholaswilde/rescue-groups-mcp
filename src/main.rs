@@ -117,6 +117,7 @@ struct ConfigFile {
     species: Option<String>,
     miles: Option<u32>,
     timeout_seconds: Option<u64>,
+    lazy: Option<bool>,
 }
 
 #[derive(Parser, Debug)]
@@ -201,6 +202,7 @@ struct Settings {
     default_miles: u32,
     default_species: String,
     timeout: std::time::Duration,
+    lazy: bool,
     cache: Arc<moka::future::Cache<String, Value>>,
 }
 
@@ -252,6 +254,7 @@ fn merge_configuration(cli: &Cli) -> Result<Settings, Box<dyn Error + Send + Syn
                 .and_then(|c| c.timeout_seconds)
                 .unwrap_or(30),
         ),
+        lazy: file_config.as_ref().and_then(|c| c.lazy).unwrap_or(true),
         cache: Arc::new(cache),
     })
 }
@@ -297,7 +300,10 @@ async fn fetch_with_cache(
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(AppError::NotFound);
         }
-        return Err(AppError::ApiError(format!("API Error: {}", response.status())));
+        return Err(AppError::ApiError(format!(
+            "API Error: {}",
+            response.status()
+        )));
     }
 
     let data: Value = response.json().await?;
@@ -602,10 +608,7 @@ fn format_species_results(data: &Value) -> Result<String, AppError> {
     Ok(format!("### Supported Species\n\n{}", names.join("\n")))
 }
 
-fn format_metadata_results(
-    data: &Value,
-    metadata_type: &str,
-) -> Result<String, AppError> {
+fn format_metadata_results(data: &Value, metadata_type: &str) -> Result<String, AppError> {
     let items = data
         .get("data")
         .and_then(|d| d.as_array())
@@ -661,10 +664,7 @@ fn format_org_results(data: &Value) -> Result<String, AppError> {
     Ok(results.join("\n\n---\n\n"))
 }
 
-fn format_breed_results(
-    data: &Value,
-    species: &str,
-) -> Result<String, AppError> {
+fn format_breed_results(data: &Value, species: &str) -> Result<String, AppError> {
     let breeds = data
         .get("data")
         .and_then(|d| d.as_array())
@@ -688,11 +688,8 @@ fn format_breed_results(
     ))
 }
 
-fn print_output<F>(
-    result: Result<Value, AppError>,
-    json_mode: bool,
-    formatter: F,
-) where
+fn print_output<F>(result: Result<Value, AppError>, json_mode: bool, formatter: F)
+where
     F: Fn(&Value) -> Result<String, AppError>,
 {
     match result {
@@ -710,19 +707,19 @@ fn print_output<F>(
     }
 }
 
-async fn list_breeds(
-    settings: &Settings,
-    args: SpeciesArgs,
-) -> Result<Value, AppError> {
+async fn list_breeds(settings: &Settings, args: SpeciesArgs) -> Result<Value, AppError> {
     let species_id = if args.species.chars().all(char::is_numeric) {
         args.species
     } else {
         // Try to resolve name to ID
         let species_list = list_species(settings).await?;
-        let data = species_list
-            .get("data")
-            .and_then(|d| d.as_array())
-            .ok_or(AppError::Internal("Failed to fetch species list for resolution".to_string()))?;
+        let data =
+            species_list
+                .get("data")
+                .and_then(|d| d.as_array())
+                .ok_or(AppError::Internal(
+                    "Failed to fetch species list for resolution".to_string(),
+                ))?;
 
         let target = args.species.to_lowercase();
         let found = data.iter().find(|s| {
@@ -751,10 +748,7 @@ async fn list_species(settings: &Settings) -> Result<Value, AppError> {
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn list_metadata(
-    settings: &Settings,
-    args: MetadataArgs,
-) -> Result<Value, AppError> {
+async fn list_metadata(settings: &Settings, args: MetadataArgs) -> Result<Value, AppError> {
     let url = format!(
         "{}/public/animals/{}",
         settings.base_url, args.metadata_type
@@ -767,18 +761,12 @@ async fn list_animals(settings: &Settings) -> Result<Value, AppError> {
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn get_animal_details(
-    settings: &Settings,
-    args: AnimalIdArgs,
-) -> Result<Value, AppError> {
+async fn get_animal_details(settings: &Settings, args: AnimalIdArgs) -> Result<Value, AppError> {
     let url = format!("{}/public/animals/{}", settings.base_url, args.animal_id);
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn get_contact_info(
-    settings: &Settings,
-    args: AnimalIdArgs,
-) -> Result<Value, AppError> {
+async fn get_contact_info(settings: &Settings, args: AnimalIdArgs) -> Result<Value, AppError> {
     let url = format!(
         "{}/public/animals/{}?include=orgs",
         settings.base_url, args.animal_id
@@ -786,10 +774,7 @@ async fn get_contact_info(
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn compare_animals(
-    settings: &Settings,
-    args: CompareArgs,
-) -> Result<Value, AppError> {
+async fn compare_animals(settings: &Settings, args: CompareArgs) -> Result<Value, AppError> {
     let mut set = JoinSet::new();
     // Deduplicate and limit
     let mut ids = args.animal_ids.clone();
@@ -799,15 +784,9 @@ async fn compare_animals(
     for id in ids.iter().take(5) {
         let settings = settings.clone();
         let id = id.clone();
-        set.spawn(async move {
-            get_animal_details(
-                &settings,
-                AnimalIdArgs {
-                    animal_id: id,
-                },
-            )
-            .await
-        });
+        set.spawn(
+            async move { get_animal_details(&settings, AnimalIdArgs { animal_id: id }).await },
+        );
     }
 
     let mut valid_animals = Vec::new();
@@ -830,10 +809,7 @@ async fn compare_animals(
     Ok(json!({ "data": valid_animals, "errors": errors }))
 }
 
-async fn search_organizations(
-    settings: &Settings,
-    args: OrgSearchArgs,
-) -> Result<Value, AppError> {
+async fn search_organizations(settings: &Settings, args: OrgSearchArgs) -> Result<Value, AppError> {
     let url = format!("{}/public/orgs/search", settings.base_url);
     let miles = args.miles.unwrap_or(settings.default_miles);
     let postal_code = args
@@ -853,18 +829,12 @@ async fn search_organizations(
     fetch_with_cache(settings, &url, "POST", Some(body)).await
 }
 
-async fn get_organization_details(
-    settings: &Settings,
-    args: OrgIdArgs,
-) -> Result<Value, AppError> {
+async fn get_organization_details(settings: &Settings, args: OrgIdArgs) -> Result<Value, AppError> {
     let url = format!("{}/public/orgs/{}", settings.base_url, args.org_id);
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn list_org_animals(
-    settings: &Settings,
-    args: OrgIdArgs,
-) -> Result<Value, AppError> {
+async fn list_org_animals(settings: &Settings, args: OrgIdArgs) -> Result<Value, AppError> {
     let url = format!(
         "{}/public/orgs/{}/animals/search/available",
         settings.base_url, args.org_id
@@ -872,10 +842,7 @@ async fn list_org_animals(
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn fetch_pets(
-    settings: &Settings,
-    args: ToolArgs,
-) -> Result<Value, AppError> {
+async fn fetch_pets(settings: &Settings, args: ToolArgs) -> Result<Value, AppError> {
     // Merge Tool Args with Server Defaults
     // This is the "Dynamic Lookup" logic:
     // 1. If AI sends a postal_code, use it.
@@ -1020,6 +987,186 @@ async fn fetch_adopted_pets(
     });
 
     fetch_with_cache(settings, &url, "POST", Some(body)).await
+}
+
+fn get_all_tool_definitions() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "list_animals",
+            "description": "List the most recent adoptable animals available globally.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
+            "name": "list_species",
+            "description": "List all animal species supported by the RescueGroups API.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
+            "name": "list_metadata",
+            "description": "List valid metadata values for animal attributes (colors, patterns, qualities).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "metadata_type": {
+                        "type": "string",
+                        "description": "The type of metadata to list (e.g., colors, patterns, qualities)"
+                    }
+                },
+                "required": ["metadata_type"]
+            }
+        }),
+        json!({
+            "name": "list_breeds",
+            "description": "List available breeds for a specific species.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "species": { "type": "string", "description": "Type of animal (e.g., dogs, cats, rabbits)" }
+                },
+                "required": ["species"]
+            }
+        }),
+        json!({
+            "name": "get_animal_details",
+            "description": "Get detailed information about a specific animal by its ID.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "animal_id": { "type": "string", "description": "The unique ID of the animal." }
+                },
+                "required": ["animal_id"]
+            }
+        }),
+        json!({
+            "name": "get_contact_info",
+            "description": "Get the primary contact method (email, phone, organization) for a specific animal.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "animal_id": { "type": "string", "description": "The unique ID of the animal." }
+                },
+                "required": ["animal_id"]
+            }
+        }),
+        json!({
+            "name": "compare_animals",
+            "description": "Compare up to 5 animals side-by-side by their IDs.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "animal_ids": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "List of animal IDs to compare (max 5)."
+                    }
+                },
+                "required": ["animal_ids"]
+            }
+        }),
+        json!({
+            "name": "get_organization_details",
+            "description": "Get detailed information about a specific rescue organization by its ID.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "org_id": { "type": "string", "description": "The unique ID of the organization." }
+                },
+                "required": ["org_id"]
+            }
+        }),
+        json!({
+            "name": "list_org_animals",
+            "description": "List all animals available for adoption at a specific organization.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "org_id": { "type": "string", "description": "The unique ID of the organization." }
+                },
+                "required": ["org_id"]
+            }
+        }),
+        json!({
+            "name": "search_organizations",
+            "description": "Search for animal rescue organizations and shelters by location.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "postal_code": { "type": "string", "description": "Zip code (e.g. 90210)" },
+                    "miles": { "type": "integer", "description": "Search radius (default 50)" }
+                }
+            }
+        }),
+        json!({
+            "name": "search_adoptable_pets",
+            "description": "Search for adoptable pets (dogs, cats, etc) by location and various traits.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "postal_code": { "type": "string", "description": "Zip code (e.g. 90210)" },
+                    "species": { "type": "string", "description": "Type of animal (dogs, cats, rabbits)" },
+                    "breeds": { "type": "string", "description": "Specific breed name (e.g. Golden Retriever)" },
+                    "miles": { "type": "integer", "description": "Search radius (default 50)" },
+                    "sex": { "type": "string", "description": "Sex of the animal (Male, Female)" },
+                    "age": { "type": "string", "description": "Age group (Baby, Young, Adult, Senior)" },
+                    "size": { "type": "string", "description": "Size group (Small, Medium, Large, X-Large)" },
+                    "good_with_children": { "type": "boolean", "description": "Whether the pet is good with children." },
+                    "good_with_dogs": { "type": "boolean", "description": "Whether the pet is good with other dogs." },
+                    "good_with_cats": { "type": "boolean", "description": "Whether the pet is good with cats." },
+                    "house_trained": { "type": "boolean", "description": "Whether the pet is house trained." },
+                    "special_needs": { "type": "boolean", "description": "Whether the pet has special needs." },
+                    "sort_by": {
+                        "type": "string",
+                        "enum": ["Newest", "Distance", "Random"],
+                        "description": "Sort order for results."
+                    }
+                }
+            }
+        }),
+        json!({
+            "name": "list_adopted_animals",
+            "description": "List recently adopted animals (Success Stories) to see happy endings near you.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "postal_code": { "type": "string", "description": "Zip code (e.g. 90210)" },
+                    "species": { "type": "string", "description": "Type of animal (dogs, cats, rabbits)" },
+                    "miles": { "type": "integer", "description": "Search radius (default 50)" }
+                }
+            }
+        }),
+        json!({
+            "name": "inspect_tool",
+            "description": "Discover available tools or get detailed schema for a specific tool.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": "The name of the tool to inspect. If omitted, lists all available tools."
+                    }
+                }
+            }
+        }),
+    ]
+}
+
+fn get_core_tool_definitions() -> Vec<Value> {
+    let all = get_all_tool_definitions();
+    let core_names = vec![
+        "search_adoptable_pets",
+        "get_animal_details",
+        "inspect_tool",
+    ];
+
+    all.into_iter()
+        .filter(|t| core_names.contains(&t["name"].as_str().unwrap_or("")))
+        .collect()
 }
 
 // =========================================================================
@@ -1315,7 +1462,11 @@ async fn handle_tool_call(
         }
         "list_metadata" => {
             let args: MetadataArgs = serde_json::from_value(
-                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+                params
+                    .unwrap_or_default()
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_default(),
             )
             .unwrap_or(MetadataArgs {
                 metadata_type: "colors".to_string(),
@@ -1327,7 +1478,11 @@ async fn handle_tool_call(
         }
         "list_breeds" => {
             let args: SpeciesArgs = serde_json::from_value(
-                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+                params
+                    .unwrap_or_default()
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_default(),
             )
             .unwrap_or(SpeciesArgs {
                 species: settings.default_species.clone(),
@@ -1339,7 +1494,11 @@ async fn handle_tool_call(
         }
         "get_animal_details" => {
             let args: AnimalIdArgs = serde_json::from_value(
-                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+                params
+                    .unwrap_or_default()
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_default(),
             )
             .unwrap_or(AnimalIdArgs {
                 animal_id: "0".to_string(),
@@ -1351,14 +1510,16 @@ async fn handle_tool_call(
                 Some(a) => {
                     Ok(json!({ "content": [{ "type": "text", "text": format_single_animal(a) }] }))
                 }
-                None => {
-                    Err(AppError::NotFound)
-                }
+                None => Err(AppError::NotFound),
             }
         }
         "get_contact_info" => {
             let args: AnimalIdArgs = serde_json::from_value(
-                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+                params
+                    .unwrap_or_default()
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_default(),
             )
             .unwrap_or(AnimalIdArgs {
                 animal_id: "0".to_string(),
@@ -1370,7 +1531,11 @@ async fn handle_tool_call(
         }
         "compare_animals" => {
             let args: CompareArgs = serde_json::from_value(
-                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+                params
+                    .unwrap_or_default()
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_default(),
             )
             .unwrap_or(CompareArgs { animal_ids: vec![] });
 
@@ -1380,7 +1545,11 @@ async fn handle_tool_call(
         }
         "search_organizations" => {
             let args: OrgSearchArgs = serde_json::from_value(
-                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+                params
+                    .unwrap_or_default()
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_default(),
             )
             .unwrap_or(OrgSearchArgs {
                 postal_code: None,
@@ -1393,7 +1562,11 @@ async fn handle_tool_call(
         }
         "get_organization_details" => {
             let args: OrgIdArgs = serde_json::from_value(
-                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+                params
+                    .unwrap_or_default()
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_default(),
             )
             .unwrap_or(OrgIdArgs {
                 org_id: "0".to_string(),
@@ -1405,14 +1578,16 @@ async fn handle_tool_call(
                 Some(o) => {
                     Ok(json!({ "content": [{ "type": "text", "text": format_single_org(o) }] }))
                 }
-                None => {
-                    Err(AppError::NotFound)
-                }
+                None => Err(AppError::NotFound),
             }
         }
         "list_org_animals" => {
             let args: OrgIdArgs = serde_json::from_value(
-                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+                params
+                    .unwrap_or_default()
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_default(),
             )
             .unwrap_or(OrgIdArgs {
                 org_id: "0".to_string(),
@@ -1424,7 +1599,11 @@ async fn handle_tool_call(
         }
         "search_adoptable_pets" => {
             let args: ToolArgs = serde_json::from_value(
-                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+                params
+                    .unwrap_or_default()
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_default(),
             )
             .unwrap_or(ToolArgs {
                 postal_code: None,
@@ -1448,7 +1627,11 @@ async fn handle_tool_call(
         }
         "list_adopted_animals" => {
             let args: AdoptedAnimalsArgs = serde_json::from_value(
-                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+                params
+                    .unwrap_or_default()
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_default(),
             )
             .unwrap_or(AdoptedAnimalsArgs {
                 postal_code: None,
@@ -1460,11 +1643,47 @@ async fn handle_tool_call(
             let content = format_animal_results(&data)?;
             Ok(json!({ "content": [{ "type": "text", "text": content }] }))
         }
+        "inspect_tool" => {
+            let tool_name = params
+                .as_ref()
+                .and_then(|p| p.get("arguments"))
+                .and_then(|a| a.get("tool_name"))
+                .and_then(|n| n.as_str());
+
+            if let Some(name) = tool_name {
+                // Find specific tool
+                let tools = get_all_tool_definitions();
+                if let Some(tool) = tools.iter().find(|t| t["name"].as_str() == Some(name)) {
+                    Ok(json!({ "content": [{ "type": "text", "text": serde_json::to_string_pretty(tool).unwrap() }] }))
+                } else {
+                    Err(AppError::NotFound) // Tool not found
+                }
+            } else {
+                // List all tools (name + description)
+                let tools = get_all_tool_definitions();
+                let summary = tools
+                    .iter()
+                    .map(|t| {
+                        format!(
+                            "- {}: {}",
+                            t["name"].as_str().unwrap(),
+                            t["description"].as_str().unwrap_or("")
+                        )
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n");
+
+                Ok(json!({ "content": [{ "type": "text", "text": summary }] }))
+            }
+        }
         _ => Err(AppError::NotFound),
     }
 }
 
-async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Option<Value>, Result<Value, Value>) {
+async fn process_mcp_request(
+    req: JsonRpcRequest,
+    settings: &Settings,
+) -> (Option<Value>, Result<Value, Value>) {
     let response = match req.method.as_str() {
         "initialize" => Ok(json!({
             "protocolVersion": "2024-11-05",
@@ -1474,160 +1693,14 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
 
         "notifications/initialized" => return (None, Ok(json!({}))), // Notification, no response
 
-        "tools/list" => Ok(json!({
-            "tools": [
-// ... (rest of tools/list content)
-                    {
-                        "name": "list_animals",
-                        "description": "List the most recent adoptable animals available globally.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {}
-                        }
-                    },
-                    {
-                        "name": "list_species",
-                        "description": "List all animal species supported by the RescueGroups API.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {}
-                        }
-                    },
-                    {
-                        "name": "list_metadata",
-                        "description": "List valid metadata values for animal attributes (colors, patterns, qualities).",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "metadata_type": {
-                                    "type": "string",
-                                    "description": "The type of metadata to list (e.g., colors, patterns, qualities)"
-                                }
-                            },
-                            "required": ["metadata_type"]
-                        }
-                    },
-                    {
-                        "name": "list_breeds",
-                        "description": "List available breeds for a specific species.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "species": { "type": "string", "description": "Type of animal (e.g., dogs, cats, rabbits)" }
-                            },
-                            "required": ["species"]
-                        }
-                    },
-                    {
-                        "name": "get_animal_details",
-                        "description": "Get detailed information about a specific animal by its ID.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "animal_id": { "type": "string", "description": "The unique ID of the animal." }
-                            },
-                            "required": ["animal_id"]
-                        }
-                    },
-                    {
-                        "name": "get_contact_info",
-                        "description": "Get the primary contact method (email, phone, organization) for a specific animal.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "animal_id": { "type": "string", "description": "The unique ID of the animal." }
-                            },
-                            "required": ["animal_id"]
-                        }
-                    },
-                    {
-                        "name": "compare_animals",
-                        "description": "Compare up to 5 animals side-by-side by their IDs.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "animal_ids": {
-                                    "type": "array",
-                                    "items": { "type": "string" },
-                                    "description": "List of animal IDs to compare (max 5)."
-                                }
-                            },
-                            "required": ["animal_ids"]
-                        }
-                    },
-                    {
-                        "name": "get_organization_details",
-                        "description": "Get detailed information about a specific rescue organization by its ID.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "org_id": { "type": "string", "description": "The unique ID of the organization." }
-                            },
-                            "required": ["org_id"]
-                        }
-                    },
-                    {
-                        "name": "list_org_animals",
-                        "description": "List all animals available for adoption at a specific organization.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "org_id": { "type": "string", "description": "The unique ID of the organization." }
-                            },
-                            "required": ["org_id"]
-                        }
-                    },
-                    {
-                        "name": "search_organizations",
-                        "description": "Search for animal rescue organizations and shelters by location.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "postal_code": { "type": "string", "description": "Zip code (e.g. 90210)" },
-                                "miles": { "type": "integer", "description": "Search radius (default 50)" }
-                            }
-                        }
-                    },
-                    {
-                        "name": "search_adoptable_pets",
-                        "description": "Search for adoptable pets (dogs, cats, etc) by location and various traits.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "postal_code": { "type": "string", "description": "Zip code (e.g. 90210)" },
-                                "species": { "type": "string", "description": "Type of animal (dogs, cats, rabbits)" },
-                                "breeds": { "type": "string", "description": "Specific breed name (e.g. Golden Retriever)" },
-                                "miles": { "type": "integer", "description": "Search radius (default 50)" },
-                                "sex": { "type": "string", "description": "Sex of the animal (Male, Female)" },
-                                "age": { "type": "string", "description": "Age group (Baby, Young, Adult, Senior)" },
-                                "size": { "type": "string", "description": "Size group (Small, Medium, Large, X-Large)" },
-                                "good_with_children": { "type": "boolean", "description": "Whether the pet is good with children." },
-                                "good_with_dogs": { "type": "boolean", "description": "Whether the pet is good with other dogs." },
-                                "good_with_cats": { "type": "boolean", "description": "Whether the pet is good with cats." },
-                                "house_trained": { "type": "boolean", "description": "Whether the pet is house trained." },
-                                "special_needs": { "type": "boolean", "description": "Whether the pet has special needs." },
-                                "sort_by": {
-                                    "type": "string",
-                                    "enum": ["Newest", "Distance", "Random"],
-                                    "description": "Sort order for results."
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "list_adopted_animals",
-                        "description": "List recently adopted animals (Success Stories) to see happy endings near you.",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "postal_code": { "type": "string", "description": "Zip code (e.g. 90210)" },
-                                "species": { "type": "string", "description": "Type of animal (dogs, cats, rabbits)" },
-                                "miles": { "type": "integer", "description": "Search radius (default 50)" }
-                            }
-                        }
-                    }
-            ]
-        })),
+        "tools/list" => {
+            let tools = if settings.lazy {
+                get_core_tool_definitions()
+            } else {
+                get_all_tool_definitions()
+            };
+            Ok(json!({ "tools": tools }))
+        },
 
         "tools/call" => {
             if let Some(params) = req.params {
@@ -1640,9 +1713,9 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                     }
                 }
             } else {
-                 Err(json!({ "code": -32602, "message": "Missing parameters" }))
+                Err(json!({ "code": -32602, "message": "Missing parameters" }))
             }
-        },
+        }
 
         "ping" => Ok(json!({})),
 
@@ -1765,6 +1838,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -1809,6 +1883,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -1850,6 +1925,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -1896,6 +1972,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -1945,6 +2022,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -1989,6 +2067,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2025,6 +2104,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2060,6 +2140,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2123,6 +2204,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2203,6 +2285,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2262,6 +2345,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2317,6 +2401,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2367,6 +2452,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2432,6 +2518,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2490,6 +2577,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2602,6 +2690,7 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_secs(30),
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
@@ -2610,13 +2699,13 @@ mod tests {
         };
 
         let value = compare_animals(&settings, args).await.unwrap();
-        
+
         let valid_animals = value["data"].as_array().unwrap();
         let errors = value["errors"].as_array().unwrap();
 
         assert_eq!(valid_animals.len(), 1);
         assert_eq!(valid_animals[0]["attributes"]["name"], "Pet1");
-        
+
         assert_eq!(errors.len(), 1);
         assert!(errors[0].as_str().unwrap().contains("Resource Not Found"));
     }
@@ -2639,17 +2728,123 @@ mod tests {
             default_miles: 50,
             default_species: "dogs".to_string(),
             timeout: std::time::Duration::from_nanos(1), // Extremely short timeout
+            lazy: true,
             cache: Arc::new(moka::future::Cache::builder().build()),
         };
 
         // We expect this to fail
         let result = list_animals(&settings).await;
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         match err {
             AppError::Network(e) => assert!(e.is_timeout(), "Expected timeout, got {:?}", e),
             _ => panic!("Expected Network Error (Timeout), got {:?}", err),
         }
+    }
+
+    #[tokio::test]
+    async fn test_tools_list_lazy() {
+        let settings = Settings {
+            api_key: "key".into(),
+            base_url: "http://mock".into(),
+            default_postal_code: "00000".into(),
+            default_miles: 50,
+            default_species: "dogs".into(),
+            timeout: std::time::Duration::from_secs(30),
+            lazy: true, // Lazy Mode ON
+            cache: Arc::new(moka::future::Cache::builder().build()),
+        };
+
+        let req = JsonRpcRequest {
+            _jsonrpc: "2.0".into(),
+            id: Some(json!(1)),
+            method: "tools/list".into(),
+            params: None,
+        };
+
+        let (_, resp) = process_mcp_request(req, &settings).await;
+        let result = resp.unwrap();
+        let tools = result.get("tools").unwrap().as_array().unwrap();
+
+        // Should only have core tools
+        assert_eq!(tools.len(), 3);
+        let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert!(names.contains(&"search_adoptable_pets"));
+        assert!(names.contains(&"inspect_tool"));
+        assert!(!names.contains(&"list_species"));
+    }
+
+    #[tokio::test]
+    async fn test_inspect_tool() {
+        let settings = Settings {
+            api_key: "key".into(),
+            base_url: "http://mock".into(),
+            default_postal_code: "00000".into(),
+            default_miles: 50,
+            default_species: "dogs".into(),
+            timeout: std::time::Duration::from_secs(30),
+            lazy: true,
+            cache: Arc::new(moka::future::Cache::builder().build()),
+        };
+
+        // Inspect all
+        let val = handle_tool_call("inspect_tool", None, &settings).await.unwrap();
+        let text = val["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("list_species"));
+
+        // Inspect specific
+        let params = json!({ "arguments": { "tool_name": "list_species" } });
+        let val = handle_tool_call("inspect_tool", Some(params), &settings).await.unwrap();
+        let text = val["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("inputSchema"));
+        assert!(text.contains("list_species"));
+    }
+
+    #[tokio::test]
+    async fn test_lazy_call_hidden_tool() {
+        let mut server = mockito::Server::new_async().await;
+        // Mock list_species response
+        let body = json!({
+            "data": [
+                { "attributes": { "singular": "Dog" } }
+            ]
+        });
+        let _m = server.mock("GET", "/public/animals/species")
+            .with_status(200)
+            .with_header("content-type", "application/vnd.api+json")
+            .with_body(serde_json::to_string(&body).unwrap())
+            .create_async()
+            .await;
+
+        let settings = Settings {
+            api_key: "key".into(),
+            base_url: server.url(),
+            default_postal_code: "00000".into(),
+            default_miles: 50,
+            default_species: "dogs".into(),
+            timeout: std::time::Duration::from_secs(30),
+            lazy: true, // Lazy Mode ON
+            cache: Arc::new(moka::future::Cache::builder().build()),
+        };
+
+        // Call hidden tool 'list_species'
+        let req = JsonRpcRequest {
+            _jsonrpc: "2.0".into(),
+            id: Some(json!(1)),
+            method: "tools/call".into(),
+            params: Some(json!({
+                "name": "list_species",
+                "arguments": {}
+            })),
+        };
+
+        let (_, resp) = process_mcp_request(req, &settings).await;
+        let result = resp.unwrap();
+        
+        // Should succeed despite being hidden in tools/list
+        assert!(result.get("content").is_some());
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Dog"));
     }
 }
