@@ -26,6 +26,8 @@ use std::sync::Arc;
 use thiserror::Error as ThisError;
 use tokio::sync::{mpsc, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tracing::{debug, error, info, warn};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
 type SessionSender = mpsc::UnboundedSender<Result<Event, Infallible>>;
@@ -45,6 +47,9 @@ pub enum AppError {
 
     #[error("Resource Not Found")]
     NotFound,
+
+    #[error("Validation Error: {0}")]
+    ValidationError(String),
 
     #[error("Internal Error: {0}")]
     Internal(String),
@@ -75,6 +80,27 @@ impl From<String> for AppError {
 impl From<&str> for AppError {
     fn from(s: &str) -> Self {
         AppError::Internal(s.to_string())
+    }
+}
+
+impl AppError {
+    pub fn to_json_rpc_error(&self) -> Value {
+        let (code, message) = match self {
+            AppError::ValidationError(_) => (-32602, self.to_string()),
+            AppError::NotFound => (-32004, self.to_string()),
+            AppError::ApiError(_) | AppError::Network(_) => (-32005, self.to_string()),
+            AppError::ConfigError(_) => (-32603, self.to_string()),
+            AppError::Internal(_)
+            | AppError::Io(_)
+            | AppError::Serialization(_)
+            | AppError::Toml(_)
+            | AppError::Yaml(_) => (-32603, self.to_string()),
+        };
+
+        json!({
+            "code": code,
+            "message": message
+        })
     }
 }
 
@@ -227,7 +253,7 @@ async fn fetch_with_cache(
     url: &str,
     method: &str,
     body: Option<Value>,
-) -> Result<Value, Box<dyn Error + Send + Sync>> {
+) -> Result<Value, AppError> {
     let cache_key = format!(
         "{}:{}:{}",
         method,
@@ -257,9 +283,9 @@ async fn fetch_with_cache(
 
     if !response.status().is_success() {
         if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err("Not Found".into());
+            return Err(AppError::NotFound);
         }
-        return Err(format!("API Error: {}", response.status()).into());
+        return Err(AppError::ApiError(format!("API Error: {}", response.status())));
     }
 
     let data: Value = response.json().await?;
@@ -383,9 +409,9 @@ fn format_single_animal(animal: &Value) -> String {
     )
 }
 
-fn format_contact_info(data: &Value) -> Result<String, Box<dyn Error + Send + Sync>> {
-    let animal_data = data.get("data").ok_or("No animal data found")?;
-    let animal = extract_single_item(animal_data).ok_or("No animal data found")?;
+fn format_contact_info(data: &Value) -> Result<String, AppError> {
+    let animal_data = data.get("data").ok_or(AppError::NotFound)?;
+    let animal = extract_single_item(animal_data).ok_or(AppError::NotFound)?;
 
     let animal_attrs = &animal["attributes"];
     let animal_name = animal_attrs["name"].as_str().unwrap_or("this pet");
@@ -430,11 +456,11 @@ fn format_contact_info(data: &Value) -> Result<String, Box<dyn Error + Send + Sy
     Ok(contact_info)
 }
 
-fn format_animal_results(data: &Value) -> Result<String, Box<dyn Error + Send + Sync>> {
+fn format_animal_results(data: &Value) -> Result<String, AppError> {
     let animals = data
         .get("data")
         .and_then(|d| d.as_array())
-        .ok_or("No data found")?;
+        .ok_or(AppError::NotFound)?;
 
     if animals.is_empty() {
         return Ok("No adoptable animals found.".to_string());
@@ -463,11 +489,11 @@ fn format_animal_results(data: &Value) -> Result<String, Box<dyn Error + Send + 
     Ok(results.join("\n\n---\n\n"))
 }
 
-fn format_comparison_table(data: &Value) -> Result<String, Box<dyn Error + Send + Sync>> {
+fn format_comparison_table(data: &Value) -> Result<String, AppError> {
     let animals = data
         .get("data")
         .and_then(|d| d.as_array())
-        .ok_or("No data found")?;
+        .ok_or(AppError::NotFound)?;
 
     if animals.is_empty() {
         return Ok("No animals to compare.".to_string());
@@ -544,11 +570,11 @@ fn format_single_org(org: &Value) -> String {
     )
 }
 
-fn format_species_results(data: &Value) -> Result<String, Box<dyn Error + Send + Sync>> {
+fn format_species_results(data: &Value) -> Result<String, AppError> {
     let species = data
         .get("data")
         .and_then(|d| d.as_array())
-        .ok_or("No species data found")?;
+        .ok_or(AppError::NotFound)?;
 
     if species.is_empty() {
         return Ok("No species found.".to_string());
@@ -567,11 +593,11 @@ fn format_species_results(data: &Value) -> Result<String, Box<dyn Error + Send +
 fn format_metadata_results(
     data: &Value,
     metadata_type: &str,
-) -> Result<String, Box<dyn Error + Send + Sync>> {
+) -> Result<String, AppError> {
     let items = data
         .get("data")
         .and_then(|d| d.as_array())
-        .ok_or("No metadata found")?;
+        .ok_or(AppError::NotFound)?;
 
     if items.is_empty() {
         return Ok(format!("No {} found.", metadata_type));
@@ -591,11 +617,11 @@ fn format_metadata_results(
     ))
 }
 
-fn format_org_results(data: &Value) -> Result<String, Box<dyn Error + Send + Sync>> {
+fn format_org_results(data: &Value) -> Result<String, AppError> {
     let orgs = data
         .get("data")
         .and_then(|d| d.as_array())
-        .ok_or("No organization data found")?;
+        .ok_or(AppError::NotFound)?;
 
     if orgs.is_empty() {
         return Ok("No organizations found.".to_string());
@@ -626,11 +652,11 @@ fn format_org_results(data: &Value) -> Result<String, Box<dyn Error + Send + Syn
 fn format_breed_results(
     data: &Value,
     species: &str,
-) -> Result<String, Box<dyn Error + Send + Sync>> {
+) -> Result<String, AppError> {
     let breeds = data
         .get("data")
         .and_then(|d| d.as_array())
-        .ok_or("No breeds found")?;
+        .ok_or(AppError::NotFound)?;
 
     if breeds.is_empty() {
         return Ok(format!("No breeds found for species '{}'.", species));
@@ -651,11 +677,11 @@ fn format_breed_results(
 }
 
 fn print_output<F>(
-    result: Result<Value, Box<dyn Error + Send + Sync>>,
+    result: Result<Value, AppError>,
     json_mode: bool,
     formatter: F,
 ) where
-    F: Fn(&Value) -> Result<String, Box<dyn Error + Send + Sync>>,
+    F: Fn(&Value) -> Result<String, AppError>,
 {
     match result {
         Ok(value) => {
@@ -664,18 +690,18 @@ fn print_output<F>(
             } else {
                 match formatter(&value) {
                     Ok(text) => println!("{}", text),
-                    Err(e) => eprintln!("Error formatting output: {}", e),
+                    Err(e) => error!("Error formatting output: {}", e),
                 }
             }
         }
-        Err(e) => eprintln!("Error: {}", e),
+        Err(e) => error!("Error: {}", e),
     }
 }
 
 async fn list_breeds(
     settings: &Settings,
     args: SpeciesArgs,
-) -> Result<Value, Box<dyn Error + Send + Sync>> {
+) -> Result<Value, AppError> {
     let species_id = if args.species.chars().all(char::is_numeric) {
         args.species
     } else {
@@ -684,7 +710,7 @@ async fn list_breeds(
         let data = species_list
             .get("data")
             .and_then(|d| d.as_array())
-            .ok_or("Failed to fetch species list for resolution")?;
+            .ok_or(AppError::Internal("Failed to fetch species list for resolution".to_string()))?;
 
         let target = args.species.to_lowercase();
         let found = data.iter().find(|s| {
@@ -697,7 +723,7 @@ async fn list_breeds(
         if let Some(s) = found {
             s["id"].as_str().unwrap_or("").to_string()
         } else {
-            return Err(format!("Species '{}' not found", args.species).into());
+            return Err(AppError::NotFound);
         }
     };
 
@@ -708,7 +734,7 @@ async fn list_breeds(
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn list_species(settings: &Settings) -> Result<Value, Box<dyn Error + Send + Sync>> {
+async fn list_species(settings: &Settings) -> Result<Value, AppError> {
     let url = format!("{}/public/animals/species", settings.base_url);
     fetch_with_cache(settings, &url, "GET", None).await
 }
@@ -716,7 +742,7 @@ async fn list_species(settings: &Settings) -> Result<Value, Box<dyn Error + Send
 async fn list_metadata(
     settings: &Settings,
     args: MetadataArgs,
-) -> Result<Value, Box<dyn Error + Send + Sync>> {
+) -> Result<Value, AppError> {
     let url = format!(
         "{}/public/animals/{}",
         settings.base_url, args.metadata_type
@@ -724,7 +750,7 @@ async fn list_metadata(
     fetch_with_cache(settings, &url, "GET", None).await
 }
 
-async fn list_animals(settings: &Settings) -> Result<Value, Box<dyn Error + Send + Sync>> {
+async fn list_animals(settings: &Settings) -> Result<Value, AppError> {
     let url = format!("{}/public/animals", settings.base_url);
     fetch_with_cache(settings, &url, "GET", None).await
 }
@@ -732,7 +758,7 @@ async fn list_animals(settings: &Settings) -> Result<Value, Box<dyn Error + Send
 async fn get_animal_details(
     settings: &Settings,
     args: AnimalIdArgs,
-) -> Result<Value, Box<dyn Error + Send + Sync>> {
+) -> Result<Value, AppError> {
     let url = format!("{}/public/animals/{}", settings.base_url, args.animal_id);
     fetch_with_cache(settings, &url, "GET", None).await
 }
@@ -740,7 +766,7 @@ async fn get_animal_details(
 async fn get_contact_info(
     settings: &Settings,
     args: AnimalIdArgs,
-) -> Result<Value, Box<dyn Error + Send + Sync>> {
+) -> Result<Value, AppError> {
     let url = format!(
         "{}/public/animals/{}?include=orgs",
         settings.base_url, args.animal_id
@@ -751,7 +777,7 @@ async fn get_contact_info(
 async fn compare_animals(
     settings: &Settings,
     args: CompareArgs,
-) -> Result<Value, Box<dyn Error + Send + Sync>> {
+) -> Result<Value, AppError> {
     let mut futures = Vec::new();
     // Deduplicate and limit
     let mut ids = args.animal_ids.clone();
@@ -792,7 +818,7 @@ async fn compare_animals(
 async fn search_organizations(
     settings: &Settings,
     args: OrgSearchArgs,
-) -> Result<Value, Box<dyn Error + Send + Sync>> {
+) -> Result<Value, AppError> {
     let url = format!("{}/public/orgs/search", settings.base_url);
     let miles = args.miles.unwrap_or(settings.default_miles);
     let postal_code = args
@@ -815,7 +841,7 @@ async fn search_organizations(
 async fn get_organization_details(
     settings: &Settings,
     args: OrgIdArgs,
-) -> Result<Value, Box<dyn Error + Send + Sync>> {
+) -> Result<Value, AppError> {
     let url = format!("{}/public/orgs/{}", settings.base_url, args.org_id);
     fetch_with_cache(settings, &url, "GET", None).await
 }
@@ -823,7 +849,7 @@ async fn get_organization_details(
 async fn list_org_animals(
     settings: &Settings,
     args: OrgIdArgs,
-) -> Result<Value, Box<dyn Error + Send + Sync>> {
+) -> Result<Value, AppError> {
     let url = format!(
         "{}/public/orgs/{}/animals/search/available",
         settings.base_url, args.org_id
@@ -834,7 +860,7 @@ async fn list_org_animals(
 async fn fetch_pets(
     settings: &Settings,
     args: ToolArgs,
-) -> Result<Value, Box<dyn Error + Send + Sync>> {
+) -> Result<Value, AppError> {
     // Merge Tool Args with Server Defaults
     // This is the "Dynamic Lookup" logic:
     // 1. If AI sends a postal_code, use it.
@@ -955,7 +981,7 @@ async fn fetch_pets(
 async fn fetch_adopted_pets(
     settings: &Settings,
     args: AdoptedAnimalsArgs,
-) -> Result<Value, Box<dyn Error + Send + Sync>> {
+) -> Result<Value, AppError> {
     let miles = args.miles.unwrap_or(settings.default_miles);
     let species = args.species.as_deref().unwrap_or(&settings.default_species);
     let postal_code = args
@@ -1019,18 +1045,23 @@ async fn http_handler(
             .unwrap_or("");
 
         if auth_header != format!("Bearer {}", token) {
+            warn!("Unauthorized access attempt");
             return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
         }
     }
 
+    debug!("Received HTTP request: method={}", req.method);
     let response = process_mcp_request(req, &state.settings).await;
 
     if let Some(id) = response.0 {
-        let output = json!({
+        let mut output = json!({
             "jsonrpc": "2.0",
             "id": id,
-            "result": response.1
         });
+        match response.1 {
+            Ok(res) => output["result"] = res,
+            Err(err) => output["error"] = err,
+        }
         Json(output).into_response()
     } else {
         StatusCode::NO_CONTENT.into_response()
@@ -1061,11 +1092,14 @@ async fn message_handler(
     let response = process_mcp_request(req, &state.settings).await;
 
     if let Some(id) = response.0 {
-        let output = json!({
+        let mut output = json!({
             "jsonrpc": "2.0",
             "id": id,
-            "result": response.1
         });
+        match response.1 {
+            Ok(res) => output["result"] = res,
+            Err(err) => output["error"] = err,
+        }
 
         // Find session and send response via SSE
         if let Some(tx) = state.sessions.read().await.get(&params.session_id) {
@@ -1080,6 +1114,15 @@ async fn message_handler(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    // 0. Initialize Logging
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "rescue_groups_mcp=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer().with_writer(io::stderr))
+        .init();
+
     // 1. Load Settings
     let cli = Cli::parse();
     // Clone command to use after merge_configuration (which consumes cli)
@@ -1093,7 +1136,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             let mut reader = stdin.lock();
             let mut line = String::new();
 
-            eprintln!("RescueGroups MCP Server running (Stdio)...");
+            info!("RescueGroups MCP Server running (Stdio)...");
 
             // 3. Main Loop
             loop {
@@ -1102,19 +1145,28 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                     break;
                 } // EOF
 
-                let req: JsonRpcRequest = match serde_json::from_str(&line) {
-                    Ok(r) => r,
-                    Err(_) => continue, // Ignore malformed lines
+                let req: JsonRpcRequest = match serde_json::from_str::<JsonRpcRequest>(&line) {
+                    Ok(r) => {
+                        debug!("Received request: method={}", r.method);
+                        r
+                    }
+                    Err(e) => {
+                        warn!("Failed to parse JSON-RPC request: {}", e);
+                        continue;
+                    }
                 };
 
                 let response = process_mcp_request(req, &settings).await;
 
                 if let Some(id) = response.0 {
-                    let output = json!({
+                    let mut output = json!({
                         "jsonrpc": "2.0",
                         "id": id,
-                        "result": response.1
                     });
+                    match response.1 {
+                        Ok(res) => output["result"] = res,
+                        Err(err) => output["error"] = err,
+                    }
                     println!("{}", output);
                     io::stdout().flush()?;
                 }
@@ -1134,7 +1186,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 .with_state(app_state);
 
             let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
-            eprintln!("RescueGroups MCP Server running (HTTP + SSE) on {}", addr);
+            info!("RescueGroups MCP Server running (HTTP + SSE) on {}", addr);
 
             let listener = tokio::net::TcpListener::bind(addr).await?;
             axum::serve(listener, app).await?;
@@ -1151,8 +1203,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
         Some(Commands::GetAnimal(args)) => {
             print_output(get_animal_details(&settings, args).await, cli.json, |v| {
-                let animal_data = v.get("data").ok_or("No animal data found")?;
-                let animal = extract_single_item(animal_data).ok_or("No animal data found")?;
+                let animal_data = v.get("data").ok_or(AppError::NotFound)?;
+                let animal = extract_single_item(animal_data).ok_or(AppError::NotFound)?;
                 Ok(format_single_animal(animal))
             });
         }
@@ -1176,8 +1228,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 get_organization_details(&settings, args).await,
                 cli.json,
                 |v| {
-                    let org_data = v.get("data").ok_or("No organization data found")?;
-                    let org = extract_single_item(org_data).ok_or("No organization data found")?;
+                    let org_data = v.get("data").ok_or(AppError::NotFound)?;
+                    let org = extract_single_item(org_data).ok_or(AppError::NotFound)?;
                     Ok(format_single_org(org))
                 },
             );
@@ -1219,29 +1271,197 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 }
                 Man::new(cmd)
                     .render(&mut fs::File::create(out_dir.join("rescue-groups-mcp.1"))?)?;
-                eprintln!("Man page generated in {}", man_dir);
+                info!("Man page generated in {}", man_dir);
             }
 
             if args.shell.is_none() && args.man.is_none() {
-                eprintln!("Please specify --shell <SHELL> or --man <DIR>");
+                warn!("Please specify --shell <SHELL> or --man <DIR>");
             }
         }
     }
     Ok(())
 }
 
-async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Option<Value>, Value) {
+async fn handle_tool_call(
+    name: &str,
+    params: Option<Value>,
+    settings: &Settings,
+) -> Result<Value, AppError> {
+    match name {
+        "list_animals" => {
+            let data = list_animals(settings).await?;
+            let content = format_animal_results(&data)?;
+            Ok(json!({ "content": [{ "type": "text", "text": content }] }))
+        }
+        "list_species" => {
+            let data = list_species(settings).await?;
+            let content = format_species_results(&data)?;
+            Ok(json!({ "content": [{ "type": "text", "text": content }] }))
+        }
+        "list_metadata" => {
+            let args: MetadataArgs = serde_json::from_value(
+                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+            )
+            .unwrap_or(MetadataArgs {
+                metadata_type: "colors".to_string(),
+            });
+
+            let data = list_metadata(settings, args.clone()).await?;
+            let content = format_metadata_results(&data, &args.metadata_type)?;
+            Ok(json!({ "content": [{ "type": "text", "text": content }] }))
+        }
+        "list_breeds" => {
+            let args: SpeciesArgs = serde_json::from_value(
+                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+            )
+            .unwrap_or(SpeciesArgs {
+                species: settings.default_species.clone(),
+            });
+
+            let data = list_breeds(settings, args.clone()).await?;
+            let content = format_breed_results(&data, &args.species)?;
+            Ok(json!({ "content": [{ "type": "text", "text": content }] }))
+        }
+        "get_animal_details" => {
+            let args: AnimalIdArgs = serde_json::from_value(
+                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+            )
+            .unwrap_or(AnimalIdArgs {
+                animal_id: "0".to_string(),
+            });
+
+            let data = get_animal_details(settings, args).await?;
+            let animal_data = data.get("data");
+            match animal_data.and_then(|d| extract_single_item(d)) {
+                Some(a) => {
+                    Ok(json!({ "content": [{ "type": "text", "text": format_single_animal(a) }] }))
+                }
+                None => {
+                    Err(AppError::NotFound)
+                }
+            }
+        }
+        "get_contact_info" => {
+            let args: AnimalIdArgs = serde_json::from_value(
+                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+            )
+            .unwrap_or(AnimalIdArgs {
+                animal_id: "0".to_string(),
+            });
+
+            let data = get_contact_info(settings, args).await?;
+            let content = format_contact_info(&data)?;
+            Ok(json!({ "content": [{ "type": "text", "text": content }] }))
+        }
+        "compare_animals" => {
+            let args: CompareArgs = serde_json::from_value(
+                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+            )
+            .unwrap_or(CompareArgs { animal_ids: vec![] });
+
+            let data = compare_animals(settings, args).await?;
+            let content = format_comparison_table(&data)?;
+            Ok(json!({ "content": [{ "type": "text", "text": content }] }))
+        }
+        "search_organizations" => {
+            let args: OrgSearchArgs = serde_json::from_value(
+                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+            )
+            .unwrap_or(OrgSearchArgs {
+                postal_code: None,
+                miles: None,
+            });
+
+            let data = search_organizations(settings, args).await?;
+            let content = format_org_results(&data)?;
+            Ok(json!({ "content": [{ "type": "text", "text": content }] }))
+        }
+        "get_organization_details" => {
+            let args: OrgIdArgs = serde_json::from_value(
+                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+            )
+            .unwrap_or(OrgIdArgs {
+                org_id: "0".to_string(),
+            });
+
+            let data = get_organization_details(settings, args).await?;
+            let org_data = data.get("data");
+            match org_data.and_then(|d| extract_single_item(d)) {
+                Some(o) => {
+                    Ok(json!({ "content": [{ "type": "text", "text": format_single_org(o) }] }))
+                }
+                None => {
+                    Err(AppError::NotFound)
+                }
+            }
+        }
+        "list_org_animals" => {
+            let args: OrgIdArgs = serde_json::from_value(
+                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+            )
+            .unwrap_or(OrgIdArgs {
+                org_id: "0".to_string(),
+            });
+
+            let data = list_org_animals(settings, args).await?;
+            let content = format_animal_results(&data)?;
+            Ok(json!({ "content": [{ "type": "text", "text": content }] }))
+        }
+        "search_adoptable_pets" => {
+            let args: ToolArgs = serde_json::from_value(
+                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+            )
+            .unwrap_or(ToolArgs {
+                postal_code: None,
+                miles: None,
+                species: None,
+                breeds: None,
+                sex: None,
+                age: None,
+                size: None,
+                good_with_children: None,
+                good_with_dogs: None,
+                good_with_cats: None,
+                house_trained: None,
+                special_needs: None,
+                sort_by: None,
+            });
+
+            let data = fetch_pets(settings, args).await?;
+            let content = format_animal_results(&data)?;
+            Ok(json!({ "content": [{ "type": "text", "text": content }] }))
+        }
+        "list_adopted_animals" => {
+            let args: AdoptedAnimalsArgs = serde_json::from_value(
+                params.unwrap_or_default().get("arguments").cloned().unwrap_or_default(),
+            )
+            .unwrap_or(AdoptedAnimalsArgs {
+                postal_code: None,
+                miles: None,
+                species: None,
+            });
+
+            let data = fetch_adopted_pets(settings, args).await?;
+            let content = format_animal_results(&data)?;
+            Ok(json!({ "content": [{ "type": "text", "text": content }] }))
+        }
+        _ => Err(AppError::NotFound),
+    }
+}
+
+async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Option<Value>, Result<Value, Value>) {
     let response = match req.method.as_str() {
-        "initialize" => json!({
+        "initialize" => Ok(json!({
             "protocolVersion": "2024-11-05",
             "capabilities": { "tools": {} },
             "serverInfo": { "name": "rescue-groups-mcp", "version": env!("PROJECT_VERSION") }
-        }),
+        })),
 
-        "notifications/initialized" => return (None, json!({})), // Notification, no response
+        "notifications/initialized" => return (None, Ok(json!({}))), // Notification, no response
 
-        "tools/list" => json!({
+        "tools/list" => Ok(json!({
             "tools": [
+// ... (rest of tools/list content)
                     {
                         "name": "list_animals",
                         "description": "List the most recent adoptable animals available globally.",
@@ -1392,279 +1612,26 @@ async fn process_mcp_request(req: JsonRpcRequest, settings: &Settings) -> (Optio
                         }
                     }
             ]
-        }),
+        })),
 
         "tools/call" => {
             if let Some(params) = req.params {
-                let name = params["name"].as_str().unwrap_or("");
-                match name {
-                    "list_animals" => match list_animals(settings).await {
-                        Ok(data) => match format_animal_results(&data) {
-                            Ok(content) => {
-                                json!({ "content": [{ "type": "text", "text": content }] })
-                            }
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
-                            }
-                        },
-                        Err(e) => {
-                            json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                        }
-                    },
-                    "list_species" => match list_species(settings).await {
-                        Ok(data) => match format_species_results(&data) {
-                            Ok(content) => {
-                                json!({ "content": [{ "type": "text", "text": content }] })
-                            }
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
-                            }
-                        },
-                        Err(e) => {
-                            json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                        }
-                    },
-                    "list_metadata" => {
-                        let args: MetadataArgs = serde_json::from_value(
-                            params["arguments"].clone(),
-                        )
-                        .unwrap_or(MetadataArgs {
-                            metadata_type: "colors".to_string(),
-                        });
-
-                        match list_metadata(settings, args.clone()).await {
-                            Ok(data) => match format_metadata_results(&data, &args.metadata_type) {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
-                                }
-                            },
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
-                        }
-                    }
-                    "list_breeds" => {
-                        let args: SpeciesArgs = serde_json::from_value(params["arguments"].clone())
-                            .unwrap_or(SpeciesArgs {
-                                species: settings.default_species.clone(),
-                            });
-
-                        match list_breeds(settings, args.clone()).await {
-                            Ok(data) => match format_breed_results(&data, &args.species) {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
-                                }
-                            },
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
-                        }
-                    }
-                    "get_animal_details" => {
-                        let args: AnimalIdArgs = serde_json::from_value(
-                            params["arguments"].clone(),
-                        )
-                        .unwrap_or(AnimalIdArgs {
-                            animal_id: "0".to_string(),
-                        });
-
-                        match get_animal_details(settings, args).await {
-                            Ok(data) => {
-                                let animal_data = data.get("data");
-                                match animal_data.and_then(|d| extract_single_item(d)) {
-                                    Some(a) => {
-                                        json!({ "content": [{ "type": "text", "text": format_single_animal(a) }] })
-                                    }
-                                    None => {
-                                        json!({ "content": [{ "type": "text", "text": "Animal not found" }], "isError": true })
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
-                        }
-                    }
-                    "get_contact_info" => {
-                        let args: AnimalIdArgs = serde_json::from_value(
-                            params["arguments"].clone(),
-                        )
-                        .unwrap_or(AnimalIdArgs {
-                            animal_id: "0".to_string(),
-                        });
-
-                        match get_contact_info(settings, args).await {
-                            Ok(data) => match format_contact_info(&data) {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
-                                }
-                            },
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
-                        }
-                    }
-                    "compare_animals" => {
-                        let args: CompareArgs = serde_json::from_value(params["arguments"].clone())
-                            .unwrap_or(CompareArgs { animal_ids: vec![] });
-
-                        match compare_animals(settings, args).await {
-                            Ok(data) => match format_comparison_table(&data) {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
-                                }
-                            },
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
-                        }
-                    }
-                    "search_organizations" => {
-                        let args: OrgSearchArgs = serde_json::from_value(
-                            params["arguments"].clone(),
-                        )
-                        .unwrap_or(OrgSearchArgs {
-                            postal_code: None,
-                            miles: None,
-                        });
-
-                        match search_organizations(settings, args).await {
-                            Ok(data) => match format_org_results(&data) {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
-                                }
-                            },
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
-                        }
-                    }
-                    "get_organization_details" => {
-                        let args: OrgIdArgs = serde_json::from_value(params["arguments"].clone())
-                            .unwrap_or(OrgIdArgs {
-                                org_id: "0".to_string(),
-                            });
-
-                        match get_organization_details(settings, args).await {
-                            Ok(data) => {
-                                let org_data = data.get("data");
-                                match org_data.and_then(|d| extract_single_item(d)) {
-                                    Some(o) => {
-                                        json!({ "content": [{ "type": "text", "text": format_single_org(o) }] })
-                                    }
-                                    None => {
-                                        json!({ "content": [{ "type": "text", "text": "Organization not found" }], "isError": true })
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
-                        }
-                    }
-                    "list_org_animals" => {
-                        let args: OrgIdArgs = serde_json::from_value(params["arguments"].clone())
-                            .unwrap_or(OrgIdArgs {
-                                org_id: "0".to_string(),
-                            });
-
-                        match list_org_animals(settings, args).await {
-                            Ok(data) => match format_animal_results(&data) {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
-                                }
-                            },
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
-                        }
-                    }
-                    "search_adoptable_pets" => {
-                        let args: ToolArgs = serde_json::from_value(params["arguments"].clone())
-                            .unwrap_or(ToolArgs {
-                                postal_code: None,
-                                miles: None,
-                                species: None,
-                                breeds: None,
-                                sex: None,
-                                age: None,
-                                size: None,
-                                good_with_children: None,
-                                good_with_dogs: None,
-                                good_with_cats: None,
-                                house_trained: None,
-                                special_needs: None,
-                                sort_by: None,
-                            });
-
-                        match fetch_pets(settings, args).await {
-                            Ok(data) => match format_animal_results(&data) {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
-                                }
-                            },
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
-                        }
-                    }
-                    "list_adopted_animals" => {
-                        let args: AdoptedAnimalsArgs = serde_json::from_value(
-                            params["arguments"].clone(),
-                        )
-                        .unwrap_or(AdoptedAnimalsArgs {
-                            postal_code: None,
-                            miles: None,
-                            species: None,
-                        });
-
-                        match fetch_adopted_pets(settings, args).await {
-                            Ok(data) => match format_animal_results(&data) {
-                                Ok(content) => {
-                                    json!({ "content": [{ "type": "text", "text": content }] })
-                                }
-                                Err(e) => {
-                                    json!({ "content": [{ "type": "text", "text": format!("Error formatting: {}", e) }], "isError": true })
-                                }
-                            },
-                            Err(e) => {
-                                json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                            }
-                        }
-                    }
-                    _ => {
-                        json!({ "content": [{ "type": "text", "text": "Tool not found" }], "isError": true })
+                let name = params["name"].as_str().unwrap_or("").to_string();
+                match handle_tool_call(&name, Some(params), settings).await {
+                    Ok(val) => Ok(val),
+                    Err(e) => {
+                        warn!("Tool call '{}' failed: {}", name, e);
+                        Err(e.to_json_rpc_error())
                     }
                 }
             } else {
-                json!({ "isError": true })
+                 Err(json!({ "code": -32602, "message": "Missing parameters" }))
             }
-        }
+        },
 
-        "ping" => json!({}),
+        "ping" => Ok(json!({})),
 
-        _ => json!({ "error": { "code": -32601, "message": "Method not found" } }),
+        _ => Err(json!({ "code": -32601, "message": "Method not found" })),
     };
 
     (req.id, response)
@@ -2537,5 +2504,34 @@ mod tests {
         let s = "test error";
         let app_err: AppError = s.into();
         assert!(matches!(app_err, AppError::Internal(_)));
+    }
+
+    #[test]
+    fn test_json_rpc_error_mapping() {
+        let err = AppError::NotFound;
+        let json_err = err.to_json_rpc_error();
+        assert_eq!(json_err["code"], -32004);
+        assert_eq!(json_err["message"], "Resource Not Found");
+
+        let err = AppError::Internal("server error".to_string());
+        let json_err = err.to_json_rpc_error();
+        assert_eq!(json_err["code"], -32603);
+        assert!(json_err["message"]
+            .as_str()
+            .unwrap()
+            .contains("Internal Error"));
+
+        let err = AppError::ValidationError("invalid".to_string());
+        let json_err = err.to_json_rpc_error();
+        assert_eq!(json_err["code"], -32602);
+        assert!(json_err["message"]
+            .as_str()
+            .unwrap()
+            .contains("Validation Error"));
+
+        let err = AppError::ApiError("upstream".to_string());
+        let json_err = err.to_json_rpc_error();
+        assert_eq!(json_err["code"], -32005);
+        assert!(json_err["message"].as_str().unwrap().contains("API Error"));
     }
 }

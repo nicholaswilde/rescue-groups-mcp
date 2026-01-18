@@ -4,5 +4,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-- [ ] **Track: Refine Error Handling and Async Tasks**
+- [~] **Track: Refine Error Handling and Async Tasks**
   *Link: [./tracks/refine_error_async_20260117/](./tracks/refine_error_async_20260117/)*

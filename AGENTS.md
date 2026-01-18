@@ -51,6 +51,7 @@ When asked to test new functions since the last tag against a live environment:
 
 ## Release Summary Guidelines
 *   When asked for a GitHub release summary from the previous git tag to the current one, only summarize the MCP server functionality. Chore and documentation updates should be excluded.
+*   Add emoji when appropriate to the release summary.
 
 ## Gemini Added Memories
 - Fixed the `_jsonrpc` deserialization issue in `src/main.rs` by adding `#[serde(rename = "jsonrpc")]`.
