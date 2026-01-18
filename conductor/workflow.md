@@ -81,10 +81,10 @@ All tasks follow a strict lifecycle:
         -   If a test file is missing, you **must** create one. Before writing the test, **first, analyze other test files in the repository to determine the correct naming convention and testing style.** The new tests **must** validate the functionality described in this phase's tasks (`plan.md`).
 
 3.  **Execute Automated Tests with Proactive Debugging:**
-    -   Before execution, you **must** announce the exact shell command you will use to run the tests.
-    -   **Example Announcement:** "I will now run the automated test suite to verify the phase. **Command:** `CI=true npm test`"
-    -   Execute the announced command.
-    -   If tests fail, you **must** inform the user and begin debugging. You may attempt to propose a fix a **maximum of two times**. If the tests still fail after your second proposed fix, you **must stop**, report the persistent failure, and ask the user for guidance.
+    -   **Step 3.1: Execute CI Tests:** Run `task test:ci` to execute the full test suite including formatting and linting checks.
+    -   **Step 3.2: Execute Announced Command:** Run the command you announced in step 2.3 (e.g., specific test runner).
+    -   **Step 3.3: Debug and Fix:** If `task test:ci` or your specific tests fail, you **must** inform the user, analyze the failure, and propose a fix. You may attempt to fix issues a **maximum of two times**. If tests still fail after the second attempt, you **must stop**, report the persistent failure, and ask the user for guidance.
+    -   **CRITICAL:** Do not proceed to manual verification until `task test:ci` passes successfully.
 
 4.  **Propose a Detailed, Actionable Manual Verification Plan:**
     -   **CRITICAL:** To generate the plan, first analyze `product.md`, `product-guidelines.md`, and `plan.md` to determine the user-facing goals of the completed phase.
