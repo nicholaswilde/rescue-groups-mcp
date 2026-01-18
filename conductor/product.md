@@ -29,3 +29,10 @@ To bridge the gap between animal rescue data and AI assistants, making it easier
 - **Reliability:** High uptime and graceful handling of API rate limits.
 - **Performance:** Low latency responses enabled by the moka caching layer.
 - **Completeness:** Coverage of all major RescueGroups.org API search and retrieval endpoints.
+
+## Technical Implementation
+- **Language:** Rust (2021 edition)
+- **Frameworks:** `tokio` (Async runtime), `axum` (HTTP server), `reqwest` (HTTP client), `serde` (Serialization)
+- **Caching:** `moka` (Async caching with 15-minute TTL to respect rate limits)
+- **Transport:** Stdio (JSON-RPC 2.0) and HTTP (SSE/POST)
+- **Tools:** 12+ read-only tools covering search, details, organization, and metadata.

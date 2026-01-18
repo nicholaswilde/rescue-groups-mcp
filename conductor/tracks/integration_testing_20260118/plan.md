@@ -20,5 +20,5 @@
 
 ## Phase 3: Reporting
 
-- [x] Task: Summarize results and update `AGENTS.md` with verified status.
+- [x] Task: Summarize results and update documentation with verified status.
 - [ ] Task: Conductor - User Manual Verification 'Live Testing' (Protocol in workflow.md)

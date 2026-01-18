@@ -16,3 +16,14 @@
 - **Error Handling:** Provide informative error messages that help users or agents resolve issues (e.g., invalid postal code, API rate limits).
 - **Performance Aware:** Always consider the latency impact of API calls and rely on the caching layer whenever possible.
 - **Extensibility:** Design tools and modules to be easily extendable as the RescueGroups.org API evolves.
+
+## Development Conventions
+- **Language:** Rust
+- **Style:** Standard Rust formatting (`cargo fmt`) and linting (`cargo clippy`) are expected.
+- **Post-Implementation:** Always run `cargo fmt` and `cargo clippy --workspace --all-targets --all-features -- -D warnings` (or `task lint`) after adding new functions to ensure code quality.
+- **CI Checks:** Run `task test:ci` to execute formatting and tests.
+- **Documentation:** All functions and tools must be documented in the `README.md`.
+- **Testing:** Every function and MCP tool must have corresponding unit tests in `src/main.rs` (or relevant module).
+- **Versioning:** Version is dynamically handled by `build.rs` via git tags. `Cargo.toml` version should be bumped manually when creating a new release tag.
+- **Release Summary:** When asked for a GitHub release summary, only summarize MCP server functionality. Add emoji when appropriate.
+
