@@ -67,3 +67,4 @@ When asked to test new functions since the last tag against a live environment:
 - Fixed API response handling for single items wrapped in arrays (e.g., `get_animal_details`).
 - Enhanced `list_breeds` to dynamically resolve species names (e.g., "dogs") to IDs.
 - Implemented `build.rs` for dynamic versioning using `git describe`.
+- Verified all read-only MCP tools against live RescueGroups API (2026-01-18) using `cargo run`. Confirmed functionality for search, details, organization, and metadata tools.
