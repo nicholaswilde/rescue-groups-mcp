@@ -15,9 +15,9 @@
 
 ## Phase 2: Async Task Management
 
-- [ ] Task: Refine async task spawning and monitoring
-    - [ ] Write tests for long-running operations and task monitoring
-    - [ ] Refactor task spawning to use structured concurrency patterns where applicable
+- [x] Task: Refine async task spawning and monitoring 8b30cf5
+    - [x] Write tests for long-running operations and task monitoring
+    - [x] Refactor task spawning to use structured concurrency patterns where applicable
 - [ ] Task: Implement timeouts for external API calls
     - [ ] Write tests to verify client behavior on API timeouts
     - [ ] Configure `reqwest` client with global and per-request timeouts
