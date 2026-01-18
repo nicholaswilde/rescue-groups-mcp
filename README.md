@@ -34,6 +34,7 @@ You will need to request an [API key][1] from the group.
 - `search_organizations`: Find animal rescue organizations and shelters by location.
 - `get_organization_details`: Fetch a complete profile for a specific organization (mission, address, and contact info).
 - `list_org_animals`: List all animals available for adoption at a specific shelter.
+- `inspect_tool`: Discover available tools or get detailed schema for a specific tool.
 
 ## :hammer_and_wrench: Build & Test
 
@@ -204,6 +205,11 @@ api_key = "YOUR_API_KEY_HERE"
 postal_code = "90210"
 miles = 50
 species = "dogs"
+
+# Lazy Loading (MCP Mode)
+# If true, only a core set of tools is initially exposed to the client.
+# Other tools can be discovered via 'inspect_tool'.
+lazy = true
 ```
 
 ### :earth_africa: Environment Variables

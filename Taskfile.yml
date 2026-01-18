@@ -5,27 +5,41 @@ tasks:
   test:
     desc: Run tests
     cmds:
+      - task: fmt:check
+      - task: clippy
       - cargo test --profile ci
-      - cargo fmt --all --check
+  test:ci:
+    desc: Run tests using the CI profile
+    cmds:
+      - task: test
+
+  fmt:
+    desc: Format code with rustfmt
+    cmds:
+      - cargo fmt --all
+
+  fmt:check:
+    desc: Check code formatting with rustfmt
+    cmds:
+      - cargo fmt -- --check
+
   init:
     desc: Initialize
     preconditions:
       - test -f config.toml.example
     cmds:
       - cp config.toml.example config.toml
+
   lint:
-    desc: Lint
+    desc: Run all linting checks
     cmds:
       - task: clippy
+
   clippy:
     desc: Run cargo clippy
     cmds:
       - cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-  fmt:
-    desc: Rust fmt
-    cmds:
-      - cargo fmt
   default:
     cmds:
       - task -l

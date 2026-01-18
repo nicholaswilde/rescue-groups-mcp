@@ -1306,7 +1306,7 @@ dependencies = [
 
 [[package]]
 name = "rescue-groups-mcp"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "axum",
  "clap",
