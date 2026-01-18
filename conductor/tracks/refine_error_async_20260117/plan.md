@@ -5,10 +5,10 @@
 - [x] Task: Define comprehensive Error types 2c0d123
     - [x] Write unit tests for new `AppError` enum and its variants
     - [x] Implement `AppError` and `From` conversions for common external errors
-- [x] Task: Enhance JSON-RPC error mapping
+- [x] Task: Enhance JSON-RPC error mapping 0fa4fc7
     - [x] Write tests for error-to-JSON-RPC mapping logic
     - [x] Implement mapping in the server's response handling
-- [x] Task: Integrate centralized logging for errors
+- [x] Task: Integrate centralized logging for errors 0fa4fc7
     - [x] Write tests ensuring errors are logged with appropriate context
     - [x] Add logging calls to existing error propagation paths
 - [ ] Task: Conductor - User Manual Verification 'Error Handling Refinement' (Protocol in workflow.md)
