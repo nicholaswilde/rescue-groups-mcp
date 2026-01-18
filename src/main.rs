@@ -11,7 +11,6 @@ use axum::{
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use clap_mangen::Man;
-use futures::future::join_all;
 use futures::stream::Stream;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -25,6 +24,7 @@ use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 use tokio::sync::{mpsc, RwLock};
+use tokio::task::JoinSet;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -778,37 +778,40 @@ async fn compare_animals(
     settings: &Settings,
     args: CompareArgs,
 ) -> Result<Value, AppError> {
-    let mut futures = Vec::new();
+    let mut set = JoinSet::new();
     // Deduplicate and limit
     let mut ids = args.animal_ids.clone();
     ids.sort();
     ids.dedup();
 
     for id in ids.iter().take(5) {
-        let fut = get_animal_details(
-            settings,
-            AnimalIdArgs {
-                animal_id: id.clone(),
-            },
-        );
-        futures.push(fut);
+        let settings = settings.clone();
+        let id = id.clone();
+        set.spawn(async move {
+            get_animal_details(
+                &settings,
+                AnimalIdArgs {
+                    animal_id: id,
+                },
+            )
+            .await
+        });
     }
-
-    let results = join_all(futures).await;
 
     let mut valid_animals = Vec::new();
     let mut errors = Vec::new();
 
-    for res in results {
+    while let Some(res) = set.join_next().await {
         match res {
-            Ok(val) => {
+            Ok(Ok(val)) => {
                 if let Some(data) = val.get("data") {
                     if let Some(animal) = extract_single_item(data) {
                         valid_animals.push(animal.clone());
                     }
                 }
             }
-            Err(e) => errors.push(e.to_string()),
+            Ok(Err(e)) => errors.push(e.to_string()),
+            Err(e) => errors.push(format!("Task join error: {}", e)),
         }
     }
 
@@ -2533,5 +2536,60 @@ mod tests {
         let json_err = err.to_json_rpc_error();
         assert_eq!(json_err["code"], -32005);
         assert!(json_err["message"].as_str().unwrap().contains("API Error"));
+    }
+
+    #[tokio::test]
+    async fn test_compare_animals_partial_failure() {
+        let mut server = mockito::Server::new_async().await;
+
+        // Animal 1 - Success
+        let body1 = json!({
+            "data": {
+                "attributes": {
+                    "name": "Pet1",
+                    "breedString": "Breed1",
+                    "sex": "Male",
+                    "url": "http://p1"
+                }
+            }
+        });
+        let _m1 = server
+            .mock("GET", "/public/animals/1")
+            .with_status(200)
+            .with_header("content-type", "application/vnd.api+json")
+            .with_body(serde_json::to_string(&body1).unwrap())
+            .create_async()
+            .await;
+
+        // Animal 2 - Fail (Not Found)
+        let _m2 = server
+            .mock("GET", "/public/animals/2")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let settings = Settings {
+            api_key: "test_key".to_string(),
+            base_url: server.url(),
+            default_postal_code: "90210".to_string(),
+            default_miles: 50,
+            default_species: "dogs".to_string(),
+            cache: Arc::new(moka::future::Cache::builder().build()),
+        };
+
+        let args = CompareArgs {
+            animal_ids: vec!["1".to_string(), "2".to_string()],
+        };
+
+        let value = compare_animals(&settings, args).await.unwrap();
+        
+        let valid_animals = value["data"].as_array().unwrap();
+        let errors = value["errors"].as_array().unwrap();
+
+        assert_eq!(valid_animals.len(), 1);
+        assert_eq!(valid_animals[0]["attributes"]["name"], "Pet1");
+        
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].as_str().unwrap().contains("Resource Not Found"));
     }
 }
