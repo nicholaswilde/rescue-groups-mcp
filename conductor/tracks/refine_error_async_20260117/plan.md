@@ -18,9 +18,9 @@
 - [x] Task: Refine async task spawning and monitoring 8b30cf5
     - [x] Write tests for long-running operations and task monitoring
     - [x] Refactor task spawning to use structured concurrency patterns where applicable
-- [ ] Task: Implement timeouts for external API calls
-    - [ ] Write tests to verify client behavior on API timeouts
-    - [ ] Configure `reqwest` client with global and per-request timeouts
+- [x] Task: Implement timeouts for external API calls 41000bd
+    - [x] Write tests to verify client behavior on API timeouts
+    - [x] Configure `reqwest` client with global and per-request timeouts
 - [ ] Task: Conductor - User Manual Verification 'Async Task Management' (Protocol in workflow.md)
 
 ## Phase 3: Final Verification & Documentation
