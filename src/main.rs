@@ -25,7 +25,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     if std::env::var("RUST_LOG_FORMAT").unwrap_or_default() == "json" {
         tracing_subscriber::registry()
             .with(env_filter)
-            .with(tracing_subscriber::fmt::layer().json().with_writer(io::stderr))
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_writer(io::stderr),
+            )
             .init();
     } else {
         tracing_subscriber::registry()

@@ -573,7 +573,9 @@ mod tests {
             timeout: Duration::from_secs(1),
             lazy: false,
             cache: Arc::new(Cache::new(10)),
-            limiter: Arc::new(RateLimiter::direct(Quota::per_second(NonZeroU32::new(1).unwrap()))),
+            limiter: Arc::new(RateLimiter::direct(Quota::per_second(
+                NonZeroU32::new(1).unwrap(),
+            ))),
         }
     }
 
