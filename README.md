@@ -16,25 +16,49 @@ You will need to request an [API key][1] from the group.
 - **Advanced Caching**: Built-in asynchronous caching (15-minute TTL) using `moka` to reduce API load and stay within rate limits.
 - **Multiple Config Formats**: Support for TOML, YAML, and JSON configuration files.
 - **Rich Results**: Returns Markdown-formatted animal profiles with embedded images and detailed descriptions.
+- **Observability**: Structured JSON logging and HTTP request tracing for production monitoring.
 - **Robustness**: Comprehensive unit and integration test suite with mocked API responses.
 
 ## :toolbox: MCP Tools
 
+### :mag: Search & Discovery
 - `search_adoptable_pets`: Find pets near you by species, postal code, and radius.
-    - **Filters**: `good_with_children`, `good_with_dogs`, `good_with_cats`, `house_trained`, `special_needs`.
+    - **Filters**: `good_with_children`, `good_with_dogs`, `good_with_cats`, `house_trained`, `special_needs`, `needs_foster`.
+    - **Attributes**: `color`, `pattern` (Partial match).
     - **Sorting**: Sort by `Newest`, `Distance`, or `Random`.
 - `list_animals`: Browse the most recent adoptable animals available globally.
-- `get_contact_info`: Get the primary contact method (email, phone, organization) for a specific animal.
-- `compare_animals`: Compare up to 5 animals side-by-side (Age, Breed, Size, Compatibility).
-- `list_adopted_animals`: List recently adopted animals (Success Stories) to see happy endings near you.
+- `get_random_pet`: Discover a random adoptable animal for inspiration.
+- `search_organizations`: Find animal rescue organizations by location or name.
+
+### :information_source: Details & Profiles
 - `get_animal_details`: Fetch a complete profile for a specific animal (description, sex, age, size, and photos).
-- `list_species`: List all animal species supported by the API (e.g., Dog, Cat, Horse).
-- `list_metadata`: List valid metadata values for animal attributes (colors, patterns, qualities).
-- `list_breeds`: Discover available breeds for a specific species to refine your searches.
-- `search_organizations`: Find animal rescue organizations and shelters by location.
+- `get_contact_info`: Get the primary contact method (email, phone, organization) for a specific animal.
 - `get_organization_details`: Fetch a complete profile for a specific organization (mission, address, and contact info).
 - `list_org_animals`: List all animals available for adoption at a specific shelter.
+- `list_adopted_animals`: List recently adopted animals (Success Stories) to see happy endings near you.
+
+### :bar_chart: Comparison
+- `compare_animals`: Compare up to 5 animals side-by-side (Age, Breed, Size, Compatibility).
+
+### :books: Metadata & Reference
+- `list_species`: List all animal species supported by the API (e.g., Dog, Cat, Horse).
+- `list_breeds`: Discover available breeds for a specific species to refine your searches.
+- `list_metadata`: List valid metadata values for animal attributes (colors, patterns, qualities).
+- `list_metadata_types`: List all valid metadata categories available for discovery.
+
+### :tools: Utility
 - `inspect_tool`: Discover available tools or get detailed schema for a specific tool.
+
+## :error: Error Handling
+
+The server implements robust error handling and propagates meaningful messages back to the client via JSON-RPC:
+
+- **Validation Errors (-32602)**: Raised when tool arguments are invalid or missing.
+- **Resource Not Found (-32004)**: Raised when a specific animal, organization, or tool is not found.
+- **API/Network Errors (-32005)**: Raised when there are issues communicating with the RescueGroups API or when the API returns an error status.
+- **Internal Errors (-32603)**: General server-side failures (IO, serialization, configuration).
+
+All errors are logged to `stderr` using the `tracing` framework for easy troubleshooting in containerized environments.
 
 ## :hammer_and_wrench: Build & Test
 
@@ -59,6 +83,9 @@ The application can be used directly from the command line for quick searches an
 ```bash
 # Search for cats near 90210
 ./target/release/rescue-groups-mcp search --species cats --postal-code 90210
+
+# Search for black dogs
+./target/release/rescue-groups-mcp search --species dogs --color Black
 
 # Get contact info for an animal
 ./target/release/rescue-groups-mcp get-contact --animal-id 1234
@@ -210,6 +237,12 @@ species = "dogs"
 # If true, only a core set of tools is initially exposed to the client.
 # Other tools can be discovered via 'inspect_tool'.
 lazy = true
+
+# Rate Limiting
+# Protect your API key by limiting the number of requests per window.
+# Default: 60 requests per 60 seconds (1 request per second)
+rate_limit_requests = 60
+rate_limit_window = 60
 ```
 
 ### :earth_africa: Environment Variables
@@ -217,6 +250,8 @@ lazy = true
 You can also configure the server using environment variables:
 - `RESCUE_GROUPS_API_KEY`: Rescue Groups [API Key][1].
 - `MCP_AUTH_TOKEN`: Bearer token for authentication in HTTP mode.
+- `RUST_LOG_FORMAT`: Set to `json` for structured logging.
+- `RUST_LOG`: Control logging verbosity (e.g., `RUST_LOG=info,rescue_groups_mcp=debug`).
 
 ## :balance_scale: License
 

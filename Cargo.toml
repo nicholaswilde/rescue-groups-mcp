@@ -1,6 +1,6 @@
 [package]
 name = "rescue-groups-mcp"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
@@ -17,12 +17,13 @@ serde_yaml = "0.9" # Add this for YAML support
 moka = { version = "0.12", features = ["future"] }
 axum = "0.8.8"
 tower = "0.5.3"
+tower-http = { version = "0.6.2", features = ["trace"] }
 tokio-stream = "0.1.18"
 futures = "0.3.31"
 uuid = { version = "1.19.0", features = ["v4"] }
 thiserror = "2.0.17"
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 governor = "0.10.4"
 nonzero_ext = "0.3.0"
 

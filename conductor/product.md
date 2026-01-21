@@ -18,21 +18,25 @@ To bridge the gap between animal rescue data and AI assistants, making it easier
 - Ensure ease of use with support for various configuration formats and transport methods.
 
 ## Key Features
-- **Adoptable Pet Search:** Advanced filtering by species, location, behavior, and physical attributes.
-- **Organization Discovery:** Locate and retrieve details for rescue groups and shelters.
+- **Adoptable Pet Search:** Advanced filtering by species, location, behavior, foster status, and physical attributes.
+- **Organization Discovery:** Locate rescue groups by name or location.
+- **Adoption Events:** Find upcoming adoption events near you.
+- **Random Pet:** Discover a random adoptable animal for inspiration.
 - **Animal Comparison:** Side-by-side comparison of multiple animals to aid decision-making.
 - **Success Stories:** Track recently adopted animals to show community impact.
-- **Metadata Discovery:** Access valid API values for breeds, colors, and patterns.
+- **Metadata Discovery:** Access valid API values for breeds, colors, patterns, and more.
 - **Multi-transport Support:** Stdio for local LLM use and HTTP (SSE/POST) for remote integration.
 
 ## Success Metrics
 - **Reliability:** High uptime and graceful handling of API rate limits.
 - **Performance:** Low latency responses enabled by the moka caching layer.
+- **Safety:** Built-in rate limiting to protect API quotas.
 - **Completeness:** Coverage of all major RescueGroups.org API search and retrieval endpoints.
 
 ## Technical Implementation
 - **Language:** Rust (2021 edition)
 - **Frameworks:** `tokio` (Async runtime), `axum` (HTTP server), `reqwest` (HTTP client), `serde` (Serialization)
 - **Caching:** `moka` (Async caching with 15-minute TTL to respect rate limits)
+- **Rate Limiting:** `governor` (Token bucket algorithm for traffic shaping)
 - **Transport:** Stdio (JSON-RPC 2.0) and HTTP (SSE/POST)
 - **Tools:** 12+ read-only tools covering search, details, organization, and metadata.
