@@ -8,18 +8,33 @@
 # See https://userguide.rescuegroups.org/spaces/APIDG/pages/8192120/API+Developers+Guide+Home
 # Note: You can omit this line if you prefer to use the 
 # RESCUE_GROUPS_API_KEY environment variable instead.
-api_key = "YOUR_API_KEY_HERE"
+# api_key = "YOUR_API_KEY_HERE"
 
 # ------------------------------------------------------------------
 # SEARCH DEFAULTS
 # ------------------------------------------------------------------
 # The postal code to center the search around.
-postal_code = "90210"
+# postal_code = "90210"
 
 # Search radius in miles.
 # Default is 50 if not specified.
-miles = 50
+# miles = 50
 
 # Species to search for.
 # Common options: "dogs", "cats", "rabbits", "birds", "smallandfurry"
-species = "dogs"
+# species = "dogs"
+
+# ------------------------------------------------------------------
+# LAZY LOADING (MCP Mode)
+# ------------------------------------------------------------------
+# If true, only a core set of tools is initially exposed to the client.
+# Other tools can be discovered via 'inspect_tool'.
+# lazy = true
+
+# ------------------------------------------------------------------
+# RATE LIMITING
+# ------------------------------------------------------------------
+# Protect your API key by limiting the number of requests per window.
+# Default: 60 requests per 60 seconds (1 request per second)
+# rate_limit_requests = 60
+# rate_limit_window = 60
