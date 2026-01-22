@@ -196,6 +196,13 @@ pub fn format_single_org(org: &Value) -> String {
     )
 }
 
+pub fn format_breed_details(breed: &Value) -> String {
+    let attrs = &breed["attributes"];
+    let name = attrs["name"].as_str().unwrap_or("Unknown");
+
+    format!("# Breed: {}", name)
+}
+
 pub fn format_species_results(data: &Value) -> Result<String, AppError> {
     let species = data
         .get("data")

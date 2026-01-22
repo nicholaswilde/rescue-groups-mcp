@@ -49,6 +49,8 @@ pub enum Commands {
     ListAdopted(AdoptedAnimalsArgs),
     /// List available breeds for a species
     ListBreeds(SpeciesArgs),
+    /// Get details for a specific breed
+    GetBreed(BreedIdArgs),
     /// List metadata values (colors, patterns, etc.)
     ListMetadata(MetadataArgs),
     /// List available metadata types
@@ -126,6 +128,12 @@ pub struct AnimalIdArgs {
 }
 
 #[derive(Args, Deserialize, Clone, Debug)]
+pub struct BreedIdArgs {
+    #[arg(long)]
+    pub breed_id: String,
+}
+
+#[derive(Args, Deserialize, Clone, Debug)]
 pub struct CompareArgs {
     /// Comma-separated list of animal IDs to compare (max 5)
     #[arg(long, value_delimiter = ',')]
@@ -168,6 +176,8 @@ pub struct AdoptedAnimalsArgs {
 pub struct MetadataArgs {
     #[arg(long)]
     pub metadata_type: String,
+    #[arg(long)]
+    pub species: Option<String>,
 }
 
 #[cfg(test)]

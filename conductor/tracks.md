@@ -33,3 +33,6 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 - [x] **Track: Telemetry & Observability**
   *Link: [./tracks/telemetry_observability_20260120/](./tracks/telemetry_observability_20260120/)*
+
+- [x] **Track: More Metadata Tools**
+  *Link: [./tracks/more_metadata_tools_20260120/](./tracks/more_metadata_tools_20260120/)*

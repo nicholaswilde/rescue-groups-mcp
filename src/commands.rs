@@ -1,15 +1,15 @@
 use crate::cli::{Cli, Commands};
 use crate::client::{
-    compare_animals, fetch_adopted_pets, fetch_pets, get_animal_details, get_contact_info,
-    get_organization_details, get_random_pet, list_breeds, list_metadata, list_metadata_types,
-    list_org_animals, list_species, search_organizations,
+    compare_animals, fetch_adopted_pets, fetch_pets, get_animal_details, get_breed_details,
+    get_contact_info, get_organization_details, get_random_pet, list_breeds, list_metadata,
+    list_metadata_types, list_org_animals, list_species, search_organizations,
 };
 use crate::config::Settings;
 use crate::error::AppError;
 use crate::fmt::{
-    extract_single_item, format_animal_results, format_breed_results, format_comparison_table,
-    format_contact_info, format_metadata_results, format_org_results, format_single_animal,
-    format_single_org, format_species_results, print_output,
+    extract_single_item, format_animal_results, format_breed_details, format_breed_results,
+    format_comparison_table, format_contact_info, format_metadata_results, format_org_results,
+    format_single_animal, format_single_org, format_species_results, print_output,
 };
 use clap::CommandFactory;
 use clap_complete::generate;
@@ -101,6 +101,14 @@ pub async fn handle_command(
             let species = args.species.clone();
             print_output(list_breeds(settings, args).await, json_mode, |v| {
                 format_breed_results(v, &species)
+            });
+            Ok(())
+        }
+        Commands::GetBreed(args) => {
+            print_output(get_breed_details(settings, args).await, json_mode, |v| {
+                let breed_data = v.get("data").ok_or(AppError::NotFound)?;
+                let breed = extract_single_item(breed_data).ok_or(AppError::NotFound)?;
+                Ok(format_breed_details(breed))
             });
             Ok(())
         }

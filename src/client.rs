@@ -1,6 +1,6 @@
 use crate::cli::{
-    AdoptedAnimalsArgs, AnimalIdArgs, CompareArgs, MetadataArgs, OrgIdArgs, OrgSearchArgs,
-    SpeciesArgs, ToolArgs,
+    AdoptedAnimalsArgs, AnimalIdArgs, BreedIdArgs, CompareArgs, MetadataArgs, OrgIdArgs,
+    OrgSearchArgs, SpeciesArgs, ToolArgs,
 };
 use crate::config::Settings;
 use crate::error::AppError;
@@ -64,34 +64,36 @@ async fn fetch_with_cache(
     Ok(data)
 }
 
-pub async fn list_breeds(settings: &Settings, args: SpeciesArgs) -> Result<Value, AppError> {
-    let species_id = if args.species.chars().all(char::is_numeric) {
-        args.species
+async fn resolve_species_id(settings: &Settings, species: &str) -> Result<String, AppError> {
+    if species.chars().all(char::is_numeric) {
+        return Ok(species.to_string());
+    }
+
+    let species_list = list_species(settings).await?;
+    let data = species_list
+        .get("data")
+        .and_then(|d| d.as_array())
+        .ok_or(AppError::Internal(
+            "Failed to fetch species list for resolution".to_string(),
+        ))?;
+
+    let target = species.to_lowercase();
+    let found = data.iter().find(|s| {
+        let attrs = &s["attributes"];
+        let singular = attrs["singular"].as_str().unwrap_or("").to_lowercase();
+        let plural = attrs["plural"].as_str().unwrap_or("").to_lowercase();
+        singular == target || plural == target
+    });
+
+    if let Some(s) = found {
+        Ok(s["id"].as_str().unwrap_or("").to_string())
     } else {
-        // Try to resolve name to ID
-        let species_list = list_species(settings).await?;
-        let data =
-            species_list
-                .get("data")
-                .and_then(|d| d.as_array())
-                .ok_or(AppError::Internal(
-                    "Failed to fetch species list for resolution".to_string(),
-                ))?;
+        Err(AppError::NotFound)
+    }
+}
 
-        let target = args.species.to_lowercase();
-        let found = data.iter().find(|s| {
-            let attrs = &s["attributes"];
-            let singular = attrs["singular"].as_str().unwrap_or("").to_lowercase();
-            let plural = attrs["plural"].as_str().unwrap_or("").to_lowercase();
-            singular == target || plural == target
-        });
-
-        if let Some(s) = found {
-            s["id"].as_str().unwrap_or("").to_string()
-        } else {
-            return Err(AppError::NotFound);
-        }
-    };
+pub async fn list_breeds(settings: &Settings, args: SpeciesArgs) -> Result<Value, AppError> {
+    let species_id = resolve_species_id(settings, &args.species).await?;
 
     let url = format!(
         "{}/public/animals/species/{}/breeds",
@@ -106,9 +108,25 @@ pub async fn list_species(settings: &Settings) -> Result<Value, AppError> {
 }
 
 pub async fn list_metadata(settings: &Settings, args: MetadataArgs) -> Result<Value, AppError> {
+    let url = if let Some(species) = &args.species {
+        let species_id = resolve_species_id(settings, species).await?;
+        format!(
+            "{}/public/animals/species/{}/{}",
+            settings.base_url, species_id, args.metadata_type
+        )
+    } else {
+        format!(
+            "{}/public/animals/{}",
+            settings.base_url, args.metadata_type
+        )
+    };
+    fetch_with_cache(settings, &url, "GET", None).await
+}
+
+pub async fn get_breed_details(settings: &Settings, args: BreedIdArgs) -> Result<Value, AppError> {
     let url = format!(
-        "{}/public/animals/{}",
-        settings.base_url, args.metadata_type
+        "{}/public/animals/breeds/{}",
+        settings.base_url, args.breed_id
     );
     fetch_with_cache(settings, &url, "GET", None).await
 }

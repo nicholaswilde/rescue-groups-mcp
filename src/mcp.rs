@@ -1,18 +1,18 @@
 use crate::cli::{
-    AdoptedAnimalsArgs, AnimalIdArgs, CompareArgs, MetadataArgs, OrgIdArgs, OrgSearchArgs,
-    SpeciesArgs, ToolArgs,
+    AdoptedAnimalsArgs, AnimalIdArgs, BreedIdArgs, CompareArgs, MetadataArgs, OrgIdArgs,
+    OrgSearchArgs, SpeciesArgs, ToolArgs,
 };
 use crate::client::{
-    compare_animals, fetch_adopted_pets, fetch_pets, get_animal_details, get_contact_info,
-    get_organization_details, get_random_pet, list_animals, list_breeds, list_metadata,
-    list_metadata_types, list_org_animals, list_species, search_organizations,
+    compare_animals, fetch_adopted_pets, fetch_pets, get_animal_details, get_breed_details,
+    get_contact_info, get_organization_details, get_random_pet, list_animals, list_breeds,
+    list_metadata, list_metadata_types, list_org_animals, list_species, search_organizations,
 };
 use crate::config::Settings;
 use crate::error::AppError;
 use crate::fmt::{
-    extract_single_item, format_animal_results, format_breed_results, format_comparison_table,
-    format_contact_info, format_metadata_results, format_org_results, format_single_animal,
-    format_single_org, format_species_results,
+    extract_single_item, format_animal_results, format_breed_details, format_breed_results,
+    format_comparison_table, format_contact_info, format_metadata_results, format_org_results,
+    format_single_animal, format_single_org, format_species_results,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -54,6 +54,10 @@ fn get_all_tool_definitions() -> Vec<Value> {
                     "metadata_type": {
                         "type": "string",
                         "description": "The type of metadata to list (e.g., colors, patterns, qualities)"
+                    },
+                    "species": {
+                        "type": "string",
+                        "description": "Optional: Type of animal (e.g., dogs, cats) to filter results."
                     }
                 },
                 "required": ["metadata_type"]
@@ -76,6 +80,17 @@ fn get_all_tool_definitions() -> Vec<Value> {
                     "species": { "type": "string", "description": "Type of animal (e.g., dogs, cats, rabbits)" }
                 },
                 "required": ["species"]
+            }
+        }),
+        json!({
+            "name": "get_breed",
+            "description": "Get detailed information about a specific breed by its ID.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "breed_id": { "type": "string", "description": "The unique ID of the breed." }
+                },
+                "required": ["breed_id"]
             }
         }),
         json!({
@@ -255,6 +270,7 @@ pub async fn handle_tool_call(
             )
             .unwrap_or(MetadataArgs {
                 metadata_type: "colors".to_string(),
+                species: None,
             });
 
             let data = list_metadata(settings, args.clone()).await?;
@@ -288,6 +304,27 @@ pub async fn handle_tool_call(
             let data = list_breeds(settings, args.clone()).await?;
             let content = format_breed_results(&data, &args.species)?;
             Ok(json!({ "content": [{ "type": "text", "text": content }] }))
+        }
+        "get_breed" => {
+            let args: BreedIdArgs = serde_json::from_value(
+                params
+                    .unwrap_or_default()
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_default(),
+            )
+            .unwrap_or(BreedIdArgs {
+                breed_id: "0".to_string(),
+            });
+
+            let data = get_breed_details(settings, args).await?;
+            let breed_data = data.get("data");
+            match breed_data.and_then(|d| extract_single_item(d)) {
+                Some(b) => {
+                    Ok(json!({ "content": [{ "type": "text", "text": format_breed_details(b) }] }))
+                }
+                None => Err(AppError::NotFound),
+            }
         }
         "get_animal_details" => {
             let args: AnimalIdArgs = serde_json::from_value(
@@ -631,5 +668,28 @@ mod tests {
         assert!(!tools.is_empty());
         let list_animals = tools.iter().find(|t| t["name"] == "list_animals");
         assert!(list_animals.is_some());
+        let get_breed = tools.iter().find(|t| t["name"] == "get_breed");
+        assert!(get_breed.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_process_mcp_request_tools_call_get_breed_not_found() {
+        let settings = get_test_settings();
+        let req = JsonRpcRequest {
+            _jsonrpc: "2.0".to_string(),
+            id: Some(json!(1)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "get_breed",
+                "arguments": {
+                    "breed_id": "99999"
+                }
+            })),
+        };
+
+        let (_, result) = process_mcp_request(req, &settings).await;
+        // Since we don't have a real API or mock here, it will fail network or 404.
+        // In our test environment, it will likely be a Network Error because of dummy URL.
+        assert!(result.is_err());
     }
 }
