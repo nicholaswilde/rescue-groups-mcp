@@ -20,6 +20,8 @@
 ## Development & Testing
 - **Testing:** Standard Rust `cargo test` suite.
 - **API Mocking:** [Mockito](https://docs.rs/mockito/) - Used for reliable and reproducible unit tests by mocking RescueGroups.org API responses.
+- **Code Coverage:** [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) - Used for accurate code coverage measurement and LCOV generation.
+- **Coverage Hosting:** [Coveralls](https://coveralls.io/) - Used for visualizing coverage trends and history.
 - **Build System:** [Task](https://taskfile.dev/) - For automated linting, testing, and building workflows.
 - **Versioning:** Dynamic versioning via `build.rs` using `git describe`.
 
