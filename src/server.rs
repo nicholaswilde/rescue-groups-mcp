@@ -65,7 +65,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
-use std::io::{self, BufRead, Write};
+use std::io;
 
 pub async fn run_stdio_server(settings: Settings) -> Result<(), std::io::Error> {
     let stdin = io::stdin();
@@ -343,7 +343,9 @@ mod tests {
             sessions: Arc::new(RwLock::new(HashMap::new())),
         });
 
-        let app = Router::new().route("/", post(http_handler)).with_state(state);
+        let app = Router::new()
+            .route("/", post(http_handler))
+            .with_state(state);
 
         let response = app
             .oneshot(
@@ -386,7 +388,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&format!("/message?session_id={}", session_id))
+                    .uri(format!("/message?session_id={}", session_id))
                     .header("content-type", "application/json")
                     .body(axum::body::Body::from(
                         serde_json::to_string(&json!({

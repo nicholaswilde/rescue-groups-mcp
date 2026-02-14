@@ -255,7 +255,14 @@ mod tests {
 
     #[test]
     fn test_list_metadata_command() {
-        let args = vec!["prog", "list-metadata", "--metadata-type", "colors", "--species", "cats"];
+        let args = vec![
+            "prog",
+            "list-metadata",
+            "--metadata-type",
+            "colors",
+            "--species",
+            "cats",
+        ];
         let cli = Cli::try_parse_from(args).unwrap();
         match cli.command {
             Some(Commands::ListMetadata(metadata_args)) => {

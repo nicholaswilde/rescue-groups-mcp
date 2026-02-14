@@ -541,7 +541,9 @@ mod tests {
         let _mock_species = server
             .mock("GET", "/public/animals/species")
             .with_status(200)
-            .with_body(r#"{"data": [{"id": "1", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#)
+            .with_body(
+                r#"{"data": [{"id": "1", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#,
+            )
             .create_async()
             .await;
 
@@ -552,7 +554,14 @@ mod tests {
             .create_async()
             .await;
 
-        let result = list_breeds(&settings, SpeciesArgs { species: "dog".to_string() }).await.unwrap();
+        let result = list_breeds(
+            &settings,
+            SpeciesArgs {
+                species: "dog".to_string(),
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(result["data"][0]["attributes"]["name"], "Labrador");
     }
 
@@ -568,7 +577,14 @@ mod tests {
             .create_async()
             .await;
 
-        let result = get_animal_details(&settings, AnimalIdArgs { animal_id: "123".to_string() }).await.unwrap();
+        let result = get_animal_details(
+            &settings,
+            AnimalIdArgs {
+                animal_id: "123".to_string(),
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(result["data"]["attributes"]["name"], "Buddy");
     }
 
@@ -578,7 +594,10 @@ mod tests {
         let settings = get_test_settings(server.url());
 
         let _mock = server
-            .mock("POST", "/public/animals/search/available/dogs/haspic?sort=-animals.createdDate")
+            .mock(
+                "POST",
+                "/public/animals/search/available/dogs/haspic?sort=-animals.createdDate",
+            )
             .with_status(200)
             .with_body(r#"{"data": [{"id": "1", "attributes": {"name": "Buddy"}}]}"#)
             .create_async()
@@ -635,13 +654,18 @@ mod tests {
         let settings = get_test_settings(server.url());
 
         let _mock = server
-            .mock("POST", "/public/animals/search/available/dogs/haspic?sort=random")
+            .mock(
+                "POST",
+                "/public/animals/search/available/dogs/haspic?sort=random",
+            )
             .with_status(200)
             .with_body(r#"{"data": [{"id": "1", "attributes": {"name": "Buddy"}}]}"#)
             .create_async()
             .await;
 
-        let result = get_random_pet(&settings, Some("dogs".to_string())).await.unwrap();
+        let result = get_random_pet(&settings, Some("dogs".to_string()))
+            .await
+            .unwrap();
         assert_eq!(result["data"][0]["attributes"]["name"], "Buddy");
     }
 
@@ -700,7 +724,14 @@ mod tests {
             .create_async()
             .await;
 
-        let result = get_contact_info(&settings, AnimalIdArgs { animal_id: "123".to_string() }).await.unwrap();
+        let result = get_contact_info(
+            &settings,
+            AnimalIdArgs {
+                animal_id: "123".to_string(),
+            },
+        )
+        .await
+        .unwrap();
         assert!(result.get("included").is_some());
     }
 
@@ -734,7 +765,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_metadata_types() {
         let result = list_metadata_types().await.unwrap();
-        assert!(result["data"].as_array().unwrap().contains(&json!("breeds")));
+        assert!(result["data"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("breeds")));
     }
 
     #[tokio::test]
@@ -748,7 +782,13 @@ mod tests {
             .create_async()
             .await;
 
-        let result = get_animal_details(&settings, AnimalIdArgs { animal_id: "999".to_string() }).await;
+        let result = get_animal_details(
+            &settings,
+            AnimalIdArgs {
+                animal_id: "999".to_string(),
+            },
+        )
+        .await;
         assert!(matches!(result, Err(AppError::NotFound)));
     }
 
@@ -763,7 +803,13 @@ mod tests {
             .create_async()
             .await;
 
-        let result = get_animal_details(&settings, AnimalIdArgs { animal_id: "error".to_string() }).await;
+        let result = get_animal_details(
+            &settings,
+            AnimalIdArgs {
+                animal_id: "error".to_string(),
+            },
+        )
+        .await;
         assert!(matches!(result, Err(AppError::ApiError(_))));
     }
 
@@ -795,7 +841,14 @@ mod tests {
             .create_async()
             .await;
 
-        let result = get_organization_details(&settings, OrgIdArgs { org_id: "866".to_string() }).await.unwrap();
+        let result = get_organization_details(
+            &settings,
+            OrgIdArgs {
+                org_id: "866".to_string(),
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(result["data"]["attributes"]["name"], "Test Org");
     }
 
@@ -811,7 +864,14 @@ mod tests {
             .create_async()
             .await;
 
-        let result = list_org_animals(&settings, OrgIdArgs { org_id: "866".to_string() }).await.unwrap();
+        let result = list_org_animals(
+            &settings,
+            OrgIdArgs {
+                org_id: "866".to_string(),
+            },
+        )
+        .await
+        .unwrap();
         assert!(result["data"].as_array().is_some());
     }
 
@@ -824,7 +884,9 @@ mod tests {
         let _mock_species = server
             .mock("GET", "/public/animals/species")
             .with_status(200)
-            .with_body(r#"{"data": [{"id": "1", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#)
+            .with_body(
+                r#"{"data": [{"id": "1", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#,
+            )
             .create_async()
             .await;
 

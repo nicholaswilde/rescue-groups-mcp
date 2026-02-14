@@ -72,9 +72,18 @@ mod tests {
     #[test]
     fn test_error_display() {
         assert_eq!(AppError::NotFound.to_string(), "Resource Not Found");
-        assert_eq!(AppError::ApiError("test".to_string()).to_string(), "API Error: test");
-        assert_eq!(AppError::ConfigError("test".to_string()).to_string(), "Configuration Error: test");
-        assert_eq!(AppError::Internal("test".to_string()).to_string(), "Internal Error: test");
+        assert_eq!(
+            AppError::ApiError("test".to_string()).to_string(),
+            "API Error: test"
+        );
+        assert_eq!(
+            AppError::ConfigError("test".to_string()).to_string(),
+            "Configuration Error: test"
+        );
+        assert_eq!(
+            AppError::Internal("test".to_string()).to_string(),
+            "Internal Error: test"
+        );
     }
 
     #[test]
@@ -85,7 +94,7 @@ mod tests {
         let e: AppError = "test".to_string().into();
         assert!(matches!(e, AppError::Internal(_)));
 
-        let io_err = io::Error::new(io::ErrorKind::Other, "test");
+        let io_err = io::Error::other("test");
         let e: AppError = io_err.into();
         assert!(matches!(e, AppError::Io(_)));
 

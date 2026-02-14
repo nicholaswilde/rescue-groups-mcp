@@ -721,7 +721,9 @@ mod tests {
         let _mock_species = server
             .mock("GET", "/public/animals/species")
             .with_status(200)
-            .with_body(r#"{"data": [{"id": "1", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#)
+            .with_body(
+                r#"{"data": [{"id": "1", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#,
+            )
             .create_async()
             .await;
 
@@ -942,7 +944,10 @@ mod tests {
         settings.base_url = server.url();
 
         let _mock = server
-            .mock("POST", "/public/animals/search/available/dogs/haspic?sort=random")
+            .mock(
+                "POST",
+                "/public/animals/search/available/dogs/haspic?sort=random",
+            )
             .with_status(200)
             .with_body(r#"{"data": []}"#)
             .create_async()
@@ -985,7 +990,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_tool_call_inspect_tool() {
         let settings = get_test_settings();
-        
+
         let res = handle_tool_call("inspect_tool", None, &settings).await;
         assert!(res.is_ok());
 
@@ -1065,7 +1070,12 @@ mod tests {
         let mut settings = get_test_settings();
         settings.base_url = server.url();
 
-        let _mock = server.mock("GET", mockito::Matcher::Any).with_status(200).with_body(r#"{"data": []}"#).create_async().await;
+        let _mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
 
         // get_breed None
         let res = handle_tool_call("get_breed", None, &settings).await;
@@ -1093,7 +1103,12 @@ mod tests {
         let mut settings = get_test_settings();
         settings.base_url = server.url();
 
-        let _mock = server.mock("GET", "/public/animals").with_status(200).with_body(r#"{"data": []}"#).create_async().await;
+        let _mock = server
+            .mock("GET", "/public/animals")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
 
         let res = handle_tool_call("list_animals", None, &settings).await;
         assert!(res.is_ok());

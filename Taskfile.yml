@@ -42,7 +42,8 @@ tasks:
       - sh: test -f lcov.info
         msg: "lcov.info doesn't exist"
     cmds:
-      - /usr/local/bin/coveralls report lcov.info  -n -r {{ .COVERALLS_REPO_TOKEN }}
+      - coveralls report lcov.info  -n -r {{ .COVERALLS_REPO_TOKEN }}
+    silent: true
 
   test:
     desc: Run tests

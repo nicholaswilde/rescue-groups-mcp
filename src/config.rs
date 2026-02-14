@@ -160,7 +160,11 @@ mod tests {
     fn test_merge_configuration_toml() {
         let temp_dir = std::env::temp_dir();
         let config_path = temp_dir.join("config.toml");
-        fs::write(&config_path, "api_key = \"toml_key\"\npostal_code = \"12345\"").unwrap();
+        fs::write(
+            &config_path,
+            "api_key = \"toml_key\"\npostal_code = \"12345\"",
+        )
+        .unwrap();
 
         let cli = Cli {
             api_key: None,

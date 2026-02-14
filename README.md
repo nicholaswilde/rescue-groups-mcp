@@ -1,8 +1,8 @@
 # :dog: RescueGroups MCP Server :robot:
 
+[![coverage](https://img.shields.io/coveralls/github/nicholaswilde/rescue-groups-mcp?style=for-the-badge&logo=coveralls)](https://coveralls.io/github/nicholaswilde/rescue-groups-mcp?branch=main)
 [![task](https://img.shields.io/badge/Task-Enabled-brightgreen?style=for-the-badge&logo=task&logoColor=white)](https://taskfile.dev/#/)
-[![ci](https://img.shields.io/github/actions/workflow/status/nicholaswilde/rescue-groups-mcp/ci.yml?label=ci&style=for-the-badge&branch=main)](https://github.com/nicholaswilde/rescue-groups-mcp/actions/workflows/ci.yml)
-[![coverage](https://img.shields.io/coveralls/github/nicholaswilde/rescue-groups-mcp?style=for-the-badge)](https://coveralls.io/github/nicholaswilde/rescue-groups-mcp)
+[![ci](https://img.shields.io/github/actions/workflow/status/nicholaswilde/rescue-groups-mcp/ci.yml?label=ci&style=for-the-badge&branch=main&logo=github-actions)](https://github.com/nicholaswilde/rescue-groups-mcp/actions/workflows/ci.yml)
 
 > [!WARNING]
 > This project is currently in active development (v0.x.x) and is **not production-ready**. Features may change, and breaking changes may occur without notice.

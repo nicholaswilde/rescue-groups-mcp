@@ -7,6 +7,7 @@ mod fmt;
 mod mcp;
 mod server;
 
+#[cfg(not(test))]
 use clap::Parser;
 use cli::{Cli, Commands};
 use commands::handle_command;
@@ -102,7 +103,7 @@ mod tests {
 
         let res = run_app(cli).await;
         assert!(res.is_ok());
-        
+
         std::env::remove_var("RESCUE_GROUPS_BASE_URL");
     }
 

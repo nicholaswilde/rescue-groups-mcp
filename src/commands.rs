@@ -235,7 +235,9 @@ mod tests {
         let _mock_species = server
             .mock("GET", "/public/animals/species")
             .with_status(200)
-            .with_body(r#"{"data": [{"id": "1", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#)
+            .with_body(
+                r#"{"data": [{"id": "1", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#,
+            )
             .create_async()
             .await;
 
@@ -295,7 +297,10 @@ mod tests {
         let settings = get_test_settings(server.url());
 
         let _mock = server
-            .mock("POST", "/public/animals/search/available/dogs/haspic?sort=random")
+            .mock(
+                "POST",
+                "/public/animals/search/available/dogs/haspic?sort=random",
+            )
             .with_status(200)
             .with_body(r#"{"data": []}"#)
             .create_async()
