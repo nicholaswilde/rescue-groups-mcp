@@ -439,3 +439,379 @@ pub async fn fetch_adopted_pets(
     let body = build_search_body(miles, postal_code, Vec::new());
     fetch_with_cache(settings, &url, "POST", Some(body)).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::SpeciesArgs;
+    use crate::config::Settings;
+    use governor::{Quota, RateLimiter};
+    use moka::future::Cache;
+    use std::num::NonZeroU32;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    fn get_test_settings(url: String) -> Settings {
+        Settings {
+            api_key: "test_key".to_string(),
+            base_url: url,
+            default_postal_code: "00000".to_string(),
+            default_miles: 50,
+            default_species: "dogs".to_string(),
+            timeout: Duration::from_secs(1),
+            lazy: false,
+            cache: Arc::new(Cache::new(10)),
+            limiter: Arc::new(RateLimiter::direct(Quota::per_second(
+                NonZeroU32::new(100).unwrap(),
+            ))),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_list_species() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+        let settings = get_test_settings(url);
+
+        let mock = server
+            .mock("GET", "/public/animals/species")
+            .with_status(200)
+            .with_header("content-type", "application/vnd.api+json")
+            .with_body(r#"{"data": [{"id": "1", "type": "species", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#)
+            .create_async()
+            .await;
+
+        let result = list_species(&settings).await.unwrap();
+        mock.assert_async().await;
+        assert_eq!(result["data"][0]["attributes"]["singular"], "Dog");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_species_id_numeric() {
+        let settings = get_test_settings("http://localhost".to_string());
+        let id = resolve_species_id(&settings, "1").await.unwrap();
+        assert_eq!(id, "1");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_species_id_name() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+        let settings = get_test_settings(url);
+
+        let _mock = server
+            .mock("GET", "/public/animals/species")
+            .with_status(200)
+            .with_header("content-type", "application/vnd.api+json")
+            .with_body(r#"{"data": [{"id": "1", "type": "species", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#)
+            .create_async()
+            .await;
+
+        let id = resolve_species_id(&settings, "dog").await.unwrap();
+        assert_eq!(id, "1");
+
+        let id = resolve_species_id(&settings, "Dogs").await.unwrap();
+        assert_eq!(id, "1");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_species_id_not_found() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+        let settings = get_test_settings(url);
+
+        let _mock = server
+            .mock("GET", "/public/animals/species")
+            .with_status(200)
+            .with_header("content-type", "application/vnd.api+json")
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let result = resolve_species_id(&settings, "cat").await;
+        assert!(matches!(result, Err(AppError::NotFound)));
+    }
+
+    #[tokio::test]
+    async fn test_list_breeds() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+        let settings = get_test_settings(url);
+
+        let _mock_species = server
+            .mock("GET", "/public/animals/species")
+            .with_status(200)
+            .with_body(r#"{"data": [{"id": "1", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#)
+            .create_async()
+            .await;
+
+        let _mock_breeds = server
+            .mock("GET", "/public/animals/species/1/breeds")
+            .with_status(200)
+            .with_body(r#"{"data": [{"id": "1", "attributes": {"name": "Labrador"}}]}"#)
+            .create_async()
+            .await;
+
+        let result = list_breeds(&settings, SpeciesArgs { species: "dog".to_string() }).await.unwrap();
+        assert_eq!(result["data"][0]["attributes"]["name"], "Labrador");
+    }
+
+    #[tokio::test]
+    async fn test_get_animal_details() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/animals/123")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "123", "attributes": {"name": "Buddy"}}}"#)
+            .create_async()
+            .await;
+
+        let result = get_animal_details(&settings, AnimalIdArgs { animal_id: "123".to_string() }).await.unwrap();
+        assert_eq!(result["data"]["attributes"]["name"], "Buddy");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_pets() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("POST", "/public/animals/search/available/dogs/haspic?sort=-animals.createdDate")
+            .with_status(200)
+            .with_body(r#"{"data": [{"id": "1", "attributes": {"name": "Buddy"}}]}"#)
+            .create_async()
+            .await;
+
+        let args = ToolArgs {
+            postal_code: Some("12345".to_string()),
+            miles: Some(10),
+            species: Some("dogs".to_string()),
+            breeds: Some("Labrador".to_string()),
+            sex: Some("Male".to_string()),
+            age: Some("Adult".to_string()),
+            size: Some("Large".to_string()),
+            good_with_children: Some(true),
+            good_with_dogs: Some(true),
+            good_with_cats: Some(false),
+            house_trained: Some(true),
+            special_needs: Some(false),
+            needs_foster: Some(false),
+            color: Some("Black".to_string()),
+            pattern: Some("Solid".to_string()),
+            sort_by: Some("Newest".to_string()),
+        };
+
+        let result = fetch_pets(&settings, args).await.unwrap();
+        assert_eq!(result["data"][0]["attributes"]["name"], "Buddy");
+    }
+
+    #[tokio::test]
+    async fn test_search_organizations() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("POST", "/public/orgs/search")
+            .with_status(200)
+            .with_body(r#"{"data": [{"id": "1", "attributes": {"name": "Rescue Group"}}]}"#)
+            .create_async()
+            .await;
+
+        let args = OrgSearchArgs {
+            postal_code: None,
+            miles: None,
+            query: Some("Rescue".to_string()),
+        };
+
+        let result = search_organizations(&settings, args).await.unwrap();
+        assert_eq!(result["data"][0]["attributes"]["name"], "Rescue Group");
+    }
+
+    #[tokio::test]
+    async fn test_get_random_pet() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("POST", "/public/animals/search/available/dogs/haspic?sort=random")
+            .with_status(200)
+            .with_body(r#"{"data": [{"id": "1", "attributes": {"name": "Buddy"}}]}"#)
+            .create_async()
+            .await;
+
+        let result = get_random_pet(&settings, Some("dogs".to_string())).await.unwrap();
+        assert_eq!(result["data"][0]["attributes"]["name"], "Buddy");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_adopted_pets() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("POST", "/public/animals/search/adopted/dogs/haspic")
+            .with_status(200)
+            .with_body(r#"{"data": [{"id": "1", "attributes": {"name": "Happy"}}]}"#)
+            .create_async()
+            .await;
+
+        let args = AdoptedAnimalsArgs {
+            postal_code: None,
+            miles: None,
+            species: None,
+        };
+
+        let result = fetch_adopted_pets(&settings, args).await.unwrap();
+        assert_eq!(result["data"][0]["attributes"]["name"], "Happy");
+    }
+
+    #[tokio::test]
+    async fn test_list_metadata() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/animals/colors")
+            .with_status(200)
+            .with_body(r#"{"data": ["Black", "White"]}"#)
+            .create_async()
+            .await;
+
+        let args = MetadataArgs {
+            metadata_type: "colors".to_string(),
+            species: None,
+        };
+
+        let result = list_metadata(&settings, args).await.unwrap();
+        assert_eq!(result["data"][0], "Black");
+    }
+
+    #[tokio::test]
+    async fn test_get_contact_info() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/animals/123?include=orgs")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "123"}, "included": [{"type": "orgs", "attributes": {"email": "test@example.com"}}]}"#)
+            .create_async()
+            .await;
+
+        let result = get_contact_info(&settings, AnimalIdArgs { animal_id: "123".to_string() }).await.unwrap();
+        assert!(result.get("included").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_compare_animals() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock1 = server
+            .mock("GET", "/public/animals/1")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "1", "attributes": {"name": "Buddy"}}}"#)
+            .create_async()
+            .await;
+
+        let _mock2 = server
+            .mock("GET", "/public/animals/2")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "2", "attributes": {"name": "Lucy"}}}"#)
+            .create_async()
+            .await;
+
+        let args = CompareArgs {
+            animal_ids: vec!["1".to_string(), "2".to_string()],
+        };
+
+        let result = compare_animals(&settings, args).await.unwrap();
+        assert_eq!(result["data"].as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_list_metadata_types() {
+        let result = list_metadata_types().await.unwrap();
+        assert!(result["data"].as_array().unwrap().contains(&json!("breeds")));
+    }
+
+    #[tokio::test]
+    async fn test_api_error_404() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/animals/999")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let result = get_animal_details(&settings, AnimalIdArgs { animal_id: "999".to_string() }).await;
+        assert!(matches!(result, Err(AppError::NotFound)));
+    }
+
+    #[tokio::test]
+    async fn test_api_error_500() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/animals/error")
+            .with_status(500)
+            .create_async()
+            .await;
+
+        let result = get_animal_details(&settings, AnimalIdArgs { animal_id: "error".to_string() }).await;
+        assert!(matches!(result, Err(AppError::ApiError(_))));
+    }
+
+    #[tokio::test]
+    async fn test_list_animals() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/animals")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let result = list_animals(&settings).await.unwrap();
+        assert!(result["data"].as_array().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_get_organization_details() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/orgs/866")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "866", "attributes": {"name": "Test Org"}}}"#)
+            .create_async()
+            .await;
+
+        let result = get_organization_details(&settings, OrgIdArgs { org_id: "866".to_string() }).await.unwrap();
+        assert_eq!(result["data"]["attributes"]["name"], "Test Org");
+    }
+
+    #[tokio::test]
+    async fn test_list_org_animals() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/orgs/866/animals/search/available")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let result = list_org_animals(&settings, OrgIdArgs { org_id: "866".to_string() }).await.unwrap();
+        assert!(result["data"].as_array().is_some());
+    }
+}

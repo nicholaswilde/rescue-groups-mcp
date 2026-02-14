@@ -57,3 +57,21 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::Cli;
+
+    #[test]
+    fn test_merge_configuration_integration() {
+        let cli = Cli {
+            api_key: Some("test".to_string()),
+            config: "non_existent.toml".to_string(),
+            json: false,
+            command: None,
+        };
+        let res = merge_configuration(&cli);
+        assert!(res.is_ok());
+    }
+}

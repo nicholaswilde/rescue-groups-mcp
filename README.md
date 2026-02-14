@@ -2,6 +2,7 @@
 
 [![task](https://img.shields.io/badge/Task-Enabled-brightgreen?style=for-the-badge&logo=task&logoColor=white)](https://taskfile.dev/#/)
 [![ci](https://img.shields.io/github/actions/workflow/status/nicholaswilde/rescue-groups-mcp/ci.yml?label=ci&style=for-the-badge&branch=main)](https://github.com/nicholaswilde/rescue-groups-mcp/actions/workflows/ci.yml)
+[![coverage](https://img.shields.io/coveralls/github/nicholaswilde/rescue-groups-mcp?style=for-the-badge)](https://coveralls.io/github/nicholaswilde/rescue-groups-mcp)
 
 > [!WARNING]
 > This project is currently in active development (v0.x.x) and is **not production-ready**. Features may change, and breaking changes may occur without notice.
@@ -48,6 +49,24 @@ You will need to request an [API key][1] from the group.
 
 ### :tools: Utility
 - `inspect_tool`: Discover available tools or get detailed schema for a specific tool.
+
+## :bar_chart: Code Coverage
+
+This project uses `cargo-llvm-cov` for code coverage. Coverage reports are manually uploaded to Coveralls.
+
+### Prerequisites
+
+- `cargo-llvm-cov`: Install with `cargo install cargo-llvm-cov`
+- `coveralls` binary: Ensure `/usr/local/bin/coveralls` is available.
+
+### Commands
+
+- **Generate HTML Report**: `task test:coverage` (outputs to `target/llvm-cov/html/index.html`)
+- **Generate Summary**: `task coverage` (fails if coverage is below 90%)
+- **Upload to Coveralls**:
+    1. Create a `.env` file with `COVERALLS_REPO_TOKEN=your_token`.
+    2. Run `task coverage:report` to generate the LCOV file.
+    3. Run `task coverage:upload` to upload to Coveralls.
 
 ## :error: Error Handling
 

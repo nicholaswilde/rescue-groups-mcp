@@ -160,3 +160,372 @@ pub async fn handle_command(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::{AnimalIdArgs, SpeciesArgs};
+    use crate::config::Settings;
+    use governor::{Quota, RateLimiter};
+    use moka::future::Cache;
+    use std::num::NonZeroU32;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    fn get_test_settings(url: String) -> Settings {
+        Settings {
+            api_key: "test_key".to_string(),
+            base_url: url,
+            default_postal_code: "00000".to_string(),
+            default_miles: 50,
+            default_species: "dogs".to_string(),
+            timeout: Duration::from_secs(1),
+            lazy: false,
+            cache: Arc::new(Cache::new(10)),
+            limiter: Arc::new(RateLimiter::direct(Quota::per_second(
+                NonZeroU32::new(100).unwrap(),
+            ))),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_list_species() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/animals/species")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(Commands::ListSpecies, &settings, false).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_get_animal() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/animals/123")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "123", "attributes": {"name": "Buddy"}}}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(
+            Commands::GetAnimal(AnimalIdArgs {
+                animal_id: "123".to_string(),
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_list_breeds() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock_species = server
+            .mock("GET", "/public/animals/species")
+            .with_status(200)
+            .with_body(r#"{"data": [{"id": "1", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#)
+            .create_async()
+            .await;
+
+        let _mock_breeds = server
+            .mock("GET", "/public/animals/species/1/breeds")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(
+            Commands::ListBreeds(SpeciesArgs {
+                species: "dog".to_string(),
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_search_orgs() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("POST", "/public/orgs/search")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(
+            Commands::SearchOrgs(crate::cli::OrgSearchArgs {
+                postal_code: None,
+                miles: None,
+                query: None,
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_list_metadata_types() {
+        let settings = get_test_settings("http://localhost".to_string());
+        let res = handle_command(Commands::ListMetadataTypes, &settings, false).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_random_pet() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("POST", "/public/animals/search/available/dogs/haspic?sort=random")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(
+            Commands::RandomPet {
+                species: Some("dogs".to_string()),
+            },
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_search() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("POST", "/public/animals/search/available/dogs/haspic")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(
+            Commands::Search(crate::cli::ToolArgs {
+                postal_code: None,
+                miles: None,
+                species: None,
+                breeds: None,
+                sex: None,
+                age: None,
+                size: None,
+                good_with_children: None,
+                good_with_dogs: None,
+                good_with_cats: None,
+                house_trained: None,
+                special_needs: None,
+                needs_foster: None,
+                color: None,
+                pattern: None,
+                sort_by: None,
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_get_contact() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/animals/123?include=orgs")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "123", "attributes": {"name": "Buddy"}}}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(
+            Commands::GetContact(crate::cli::AnimalIdArgs {
+                animal_id: "123".to_string(),
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_compare() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "1", "attributes": {"name": "Buddy"}}}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(
+            Commands::Compare(crate::cli::CompareArgs {
+                animal_ids: vec!["1".to_string(), "2".to_string()],
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_get_org() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/orgs/866")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "866", "attributes": {"name": "Test Org"}}}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(
+            Commands::GetOrg(crate::cli::OrgIdArgs {
+                org_id: "866".to_string(),
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_list_org_animals() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/orgs/866/animals/search/available")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(
+            Commands::ListOrgAnimals(crate::cli::OrgIdArgs {
+                org_id: "866".to_string(),
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_list_adopted() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("POST", "/public/animals/search/adopted/dogs/haspic")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(
+            Commands::ListAdopted(crate::cli::AdoptedAnimalsArgs {
+                postal_code: None,
+                miles: None,
+                species: None,
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_list_metadata() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/animals/colors")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(
+            Commands::ListMetadata(crate::cli::MetadataArgs {
+                metadata_type: "colors".to_string(),
+                species: None,
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_get_breed() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock = server
+            .mock("GET", "/public/animals/breeds/1")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "1", "attributes": {"name": "Labrador"}}}"#)
+            .create_async()
+            .await;
+
+        let res = handle_command(
+            Commands::GetBreed(crate::cli::BreedIdArgs {
+                breed_id: "1".to_string(),
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_generate() {
+        let settings = get_test_settings("http://localhost".to_string());
+        let res = handle_command(
+            Commands::Generate(crate::cli::GenerateArgs {
+                shell: Some(clap_complete::Shell::Bash),
+                man: None,
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+}

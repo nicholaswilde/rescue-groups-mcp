@@ -692,4 +692,353 @@ mod tests {
         // In our test environment, it will likely be a Network Error because of dummy URL.
         assert!(result.is_err());
     }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_list_species() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings();
+        let mut settings = settings.clone();
+        settings.base_url = server.url();
+
+        let _mock = server
+            .mock("GET", "/public/animals/species")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let res = handle_tool_call("list_species", None, &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_list_breeds() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings();
+        let mut settings = settings.clone();
+        settings.base_url = server.url();
+
+        let _mock_species = server
+            .mock("GET", "/public/animals/species")
+            .with_status(200)
+            .with_body(r#"{"data": [{"id": "1", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#)
+            .create_async()
+            .await;
+
+        let _mock_breeds = server
+            .mock("GET", "/public/animals/species/1/breeds")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let params = json!({
+            "arguments": {
+                "species": "dog"
+            }
+        });
+
+        let res = handle_tool_call("list_breeds", Some(params), &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_list_metadata() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings();
+        let mut settings = settings.clone();
+        settings.base_url = server.url();
+
+        let _mock = server
+            .mock("GET", "/public/animals/colors")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let params = json!({
+            "arguments": {
+                "metadata_type": "colors"
+            }
+        });
+
+        let res = handle_tool_call("list_metadata", Some(params), &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_get_animal_details() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings();
+        let mut settings = settings.clone();
+        settings.base_url = server.url();
+
+        let _mock = server
+            .mock("GET", "/public/animals/123")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "123", "attributes": {"name": "Buddy"}}}"#)
+            .create_async()
+            .await;
+
+        let params = json!({
+            "arguments": {
+                "animal_id": "123"
+            }
+        });
+
+        let res = handle_tool_call("get_animal_details", Some(params), &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_get_contact_info() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings();
+        let mut settings = settings.clone();
+        settings.base_url = server.url();
+
+        let _mock = server
+            .mock("GET", "/public/animals/123?include=orgs")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "123", "attributes": {"name": "Buddy"}}}"#)
+            .create_async()
+            .await;
+
+        let params = json!({
+            "arguments": {
+                "animal_id": "123"
+            }
+        });
+
+        let res = handle_tool_call("get_contact_info", Some(params), &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_compare_animals() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings();
+        let mut settings = settings.clone();
+        settings.base_url = server.url();
+
+        let _mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "1", "attributes": {"name": "Buddy"}}}"#)
+            .create_async()
+            .await;
+
+        let params = json!({
+            "arguments": {
+                "animal_ids": ["1", "2"]
+            }
+        });
+
+        let res = handle_tool_call("compare_animals", Some(params), &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_search_organizations() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings();
+        let mut settings = settings.clone();
+        settings.base_url = server.url();
+
+        let _mock = server
+            .mock("POST", "/public/orgs/search")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let params = json!({
+            "arguments": {
+                "query": "Rescue"
+            }
+        });
+
+        let res = handle_tool_call("search_organizations", Some(params), &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_get_organization_details() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings();
+        let mut settings = settings.clone();
+        settings.base_url = server.url();
+
+        let _mock = server
+            .mock("GET", "/public/orgs/866")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "866", "attributes": {"name": "Test Org"}}}"#)
+            .create_async()
+            .await;
+
+        let params = json!({
+            "arguments": {
+                "org_id": "866"
+            }
+        });
+
+        let res = handle_tool_call("get_organization_details", Some(params), &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_list_org_animals() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings();
+        let mut settings = settings.clone();
+        settings.base_url = server.url();
+
+        let _mock = server
+            .mock("GET", "/public/orgs/866/animals/search/available")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let params = json!({
+            "arguments": {
+                "org_id": "866"
+            }
+        });
+
+        let res = handle_tool_call("list_org_animals", Some(params), &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_search_adoptable_pets() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings();
+        let mut settings = settings.clone();
+        settings.base_url = server.url();
+
+        let _mock = server
+            .mock("POST", "/public/animals/search/available/dogs/haspic")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let params = json!({
+            "arguments": {
+                "species": "dogs"
+            }
+        });
+
+        let res = handle_tool_call("search_adoptable_pets", Some(params), &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_get_random_pet() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings();
+        let mut settings = settings.clone();
+        settings.base_url = server.url();
+
+        let _mock = server
+            .mock("POST", "/public/animals/search/available/dogs/haspic?sort=random")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let params = json!({
+            "arguments": {
+                "species": "dogs"
+            }
+        });
+
+        let res = handle_tool_call("get_random_pet", Some(params), &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_list_adopted_animals() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings();
+        let mut settings = settings.clone();
+        settings.base_url = server.url();
+
+        let _mock = server
+            .mock("POST", "/public/animals/search/adopted/dogs/haspic")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        let params = json!({
+            "arguments": {
+                "species": "dogs"
+            }
+        });
+
+        let res = handle_tool_call("list_adopted_animals", Some(params), &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_inspect_tool() {
+        let settings = get_test_settings();
+        
+        let res = handle_tool_call("inspect_tool", None, &settings).await;
+        assert!(res.is_ok());
+
+        let params = json!({
+            "arguments": {
+                "tool_name": "list_animals"
+            }
+        });
+        let res = handle_tool_call("inspect_tool", Some(params), &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_mcp_request_notifications() {
+        let settings = get_test_settings();
+        let req = JsonRpcRequest {
+            _jsonrpc: "2.0".to_string(),
+            id: None,
+            method: "notifications/initialized".to_string(),
+            params: None,
+        };
+
+        let (id, result) = process_mcp_request(req, &settings).await;
+        assert!(id.is_none());
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_mcp_request_ping() {
+        let settings = get_test_settings();
+        let req = JsonRpcRequest {
+            _jsonrpc: "2.0".to_string(),
+            id: Some(json!(1)),
+            method: "ping".to_string(),
+            params: None,
+        };
+
+        let (_, result) = process_mcp_request(req, &settings).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_mcp_request_method_not_found() {
+        let settings = get_test_settings();
+        let req = JsonRpcRequest {
+            _jsonrpc: "2.0".to_string(),
+            id: Some(json!(1)),
+            method: "unknown".to_string(),
+            params: None,
+        };
+
+        let (_, result) = process_mcp_request(req, &settings).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err()["code"], -32601);
+    }
 }

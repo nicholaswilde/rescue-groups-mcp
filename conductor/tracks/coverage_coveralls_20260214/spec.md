@@ -6,6 +6,7 @@ Implement the infrastructure for manual code coverage tracking and reporting for
 ## Functional Requirements
 - **Coverage Measurement:** Use `cargo-llvm-cov` to generate accurate code coverage reports locally.
 - **Accuracy Configuration:** Configure `llvm-cov` flags to ensure precise reporting of executed lines and branches.
+- **Increase Coverage:** Write comprehensive unit and integration tests to increase the total code coverage to at least 90%.
 - **Manual Upload:** 
     - Identify and configure a CLI tool (e.g., `coveralls-lcov` or a similar helper) to upload coverage reports from the local machine to Coveralls.
     - Ensure the process handles the necessary authentication (via local environment variables).
@@ -26,4 +27,3 @@ Implement the infrastructure for manual code coverage tracking and reporting for
 
 ## Out of Scope
 - **CI/CD Automation:** Automated coverage reporting via GitHub Actions or any other CI provider.
-- Improving existing test coverage to reach the 90% mark.

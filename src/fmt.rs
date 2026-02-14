@@ -349,4 +349,183 @@ mod tests {
         assert!(output.contains("**Breed:** Poodle"));
         assert!(output.contains("![Fluffy](https://example.com/fluffy.jpg)"));
     }
+
+    #[test]
+    fn test_extract_single_item() {
+        let arr = json!([{"id": "1"}, {"id": "2"}]);
+        assert_eq!(extract_single_item(&arr).unwrap()["id"], "1");
+
+        let obj = json!({"id": "3"});
+        assert_eq!(extract_single_item(&obj).unwrap()["id"], "3");
+
+        let other = json!(1);
+        assert!(extract_single_item(&other).is_none());
+    }
+
+    #[test]
+    fn test_format_contact_info() {
+        let data = json!({
+            "data": [{"id": "1", "attributes": {"name": "Buddy", "url": "https://url.com"}}],
+            "included": [
+                {
+                    "type": "orgs",
+                    "attributes": {
+                        "name": "Org Name",
+                        "email": "org@example.com",
+                        "phone": "123-456",
+                        "city": "City",
+                        "state": "State",
+                        "url": "https://org.com"
+                    }
+                }
+            ]
+        });
+
+        let output = format_contact_info(&data).unwrap();
+        assert!(output.contains("Buddy"));
+        assert!(output.contains("Org Name"));
+        assert!(output.contains("org@example.com"));
+        assert!(output.contains("123-456"));
+        assert!(output.contains("City, State"));
+        assert!(output.contains("https://org.com"));
+    }
+
+    #[test]
+    fn test_format_animal_results() {
+        let data = json!({
+            "data": [
+                {"attributes": {"name": "A", "breedString": "B", "url": "U"}},
+                {"attributes": {"name": "C", "breedString": "D", "url": "V"}}
+            ]
+        });
+
+        let output = format_animal_results(&data).unwrap();
+        assert!(output.contains("### [A](U)"));
+        assert!(output.contains("**Breed:** B"));
+        assert!(output.contains("---"));
+        assert!(output.contains("### [C](V)"));
+    }
+
+    #[test]
+    fn test_format_comparison_table() {
+        let data = json!({
+            "data": [
+                {
+                    "attributes": {
+                        "name": "Buddy",
+                        "breedString": "Lab",
+                        "ageGroup": "Adult",
+                        "sex": "Male",
+                        "sizeGroup": "Large",
+                        "isGoodWithChildren": "Yes",
+                        "isGoodWithDogs": "Yes",
+                        "isGoodWithCats": "No",
+                        "isHouseTrained": "Yes",
+                        "isSpecialNeeds": "No",
+                        "url": "http://buddy.com"
+                    }
+                }
+            ]
+        });
+
+        let output = format_comparison_table(&data).unwrap();
+        assert!(output.contains("| Feature | [Buddy](http://buddy.com) |"));
+        assert!(output.contains("| **Breed** | Lab |"));
+        assert!(output.contains("| **Kids?** | Yes |"));
+    }
+
+    #[test]
+    fn test_format_single_org() {
+        let org = json!({
+            "attributes": {
+                "name": "Rescue",
+                "about": "We save dogs.",
+                "street": "123 St",
+                "city": "City",
+                "state": "ST",
+                "postalcode": "12345",
+                "email": "rescue@example.com",
+                "phone": "555-5555",
+                "url": "http://rescue.org",
+                "facebookUrl": "http://fb.com/rescue"
+            }
+        });
+
+        let output = format_single_org(&org);
+        assert!(output.contains("# Rescue"));
+        assert!(output.contains("We save dogs."));
+        assert!(output.contains("123 St City ST 12345"));
+    }
+
+    #[test]
+    fn test_format_breed_details() {
+        let breed = json!({
+            "attributes": {
+                "name": "Labrador"
+            }
+        });
+        assert_eq!(format_breed_details(&breed), "# Breed: Labrador");
+    }
+
+    #[test]
+    fn test_format_species_results() {
+        let data = json!({
+            "data": [
+                {"attributes": {"singular": "Cat"}},
+                {"attributes": {"singular": "Dog"}}
+            ]
+        });
+        let output = format_species_results(&data).unwrap();
+        assert!(output.contains("Cat"));
+        assert!(output.contains("Dog"));
+    }
+
+    #[test]
+    fn test_format_metadata_results() {
+        let data = json!({
+            "data": [
+                {"attributes": {"name": "Black"}},
+                {"attributes": {"name": "White"}}
+            ]
+        });
+        let output = format_metadata_results(&data, "Colors").unwrap();
+        assert!(output.contains("### Supported Colors"));
+        assert!(output.contains("Black"));
+        assert!(output.contains("White"));
+    }
+
+    #[test]
+    fn test_format_org_results() {
+        let data = json!({
+            "data": [
+                {
+                    "id": "866",
+                    "attributes": {
+                        "name": "Test Org",
+                        "city": "City",
+                        "state": "ST",
+                        "email": "org@test.com",
+                        "url": "http://test.org"
+                    }
+                }
+            ]
+        });
+        let output = format_org_results(&data).unwrap();
+        assert!(output.contains("### Test Org"));
+        assert!(output.contains("**ID:** 866"));
+    }
+
+    #[test]
+    fn test_format_breed_results() {
+        let data = json!({
+            "data": [
+                {"attributes": {"name": "Labrador"}},
+                {"attributes": {"name": "Poodle"}}
+            ]
+        });
+        let output = format_breed_results(&data, "Dogs").unwrap();
+        assert!(output.contains("### Breeds for Dogs"));
+        assert!(output.contains("Labrador"));
+        assert!(output.contains("Poodle"));
+    }
 }
