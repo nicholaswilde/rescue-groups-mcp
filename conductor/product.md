@@ -32,7 +32,7 @@ To bridge the gap between animal rescue data and AI assistants, making it easier
 - **Performance:** Low latency responses enabled by the moka caching layer.
 - **Safety:** Built-in rate limiting to protect API quotas.
 - **Completeness:** Coverage of all major RescueGroups.org API search and retrieval endpoints.
-- **Maintainability:** Maintain high code coverage (>90%) to ensure long-term stability and ease of refactoring.
+- **Maintainability:** Maintain near-complete code coverage (100% target, >=98% enforced) to ensure long-term stability and ease of refactoring.
 
 ## Technical Implementation
 - **Language:** Rust (2021 edition)
