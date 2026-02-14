@@ -39,5 +39,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-- [ ] **Track: Code Coverage with Coveralls (Manual)**
+- [x] **Track: Code Coverage with Coveralls (Manual)**
   *Link: [./tracks/coverage_coveralls_20260214/](./tracks/coverage_coveralls_20260214/)*
