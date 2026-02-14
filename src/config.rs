@@ -93,9 +93,12 @@ pub fn merge_configuration(cli: &Cli) -> Result<Settings, AppError> {
         .allow_burst(max_requests);
     let limiter = Arc::new(RateLimiter::direct(quota));
 
+    let base_url = std::env::var("RESCUE_GROUPS_BASE_URL")
+        .unwrap_or_else(|_| "https://api.rescuegroups.org/v5".to_string());
+
     Ok(Settings {
         api_key,
-        base_url: "https://api.rescuegroups.org/v5".to_string(),
+        base_url,
         default_postal_code: file_config
             .as_ref()
             .and_then(|c| c.postal_code.clone())
@@ -151,5 +154,98 @@ mod tests {
             AppError::ConfigError(msg) => assert!(msg.contains("API Key is missing")),
             _ => panic!("Expected ConfigError"),
         }
+    }
+
+    #[test]
+    fn test_merge_configuration_toml() {
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("config.toml");
+        fs::write(&config_path, "api_key = \"toml_key\"\npostal_code = \"12345\"").unwrap();
+
+        let cli = Cli {
+            api_key: None,
+            config: config_path.to_str().unwrap().to_string(),
+            json: false,
+            command: None,
+        };
+
+        let settings = merge_configuration(&cli).unwrap();
+        assert_eq!(settings.api_key, "toml_key");
+        assert_eq!(settings.default_postal_code, "12345");
+        fs::remove_file(config_path).unwrap();
+    }
+
+    #[test]
+    fn test_merge_configuration_json() {
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("config.json");
+        fs::write(&config_path, "{\"api_key\": \"json_key\", \"miles\": 10}").unwrap();
+
+        let cli = Cli {
+            api_key: None,
+            config: config_path.to_str().unwrap().to_string(),
+            json: false,
+            command: None,
+        };
+
+        let settings = merge_configuration(&cli).unwrap();
+        assert_eq!(settings.api_key, "json_key");
+        assert_eq!(settings.default_miles, 10);
+        fs::remove_file(config_path).unwrap();
+    }
+
+    #[test]
+    fn test_merge_configuration_yaml() {
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("config.yaml");
+        fs::write(&config_path, "api_key: yaml_key\nspecies: cats").unwrap();
+
+        let cli = Cli {
+            api_key: None,
+            config: config_path.to_str().unwrap().to_string(),
+            json: false,
+            command: None,
+        };
+
+        let settings = merge_configuration(&cli).unwrap();
+        assert_eq!(settings.api_key, "yaml_key");
+        assert_eq!(settings.default_species, "cats");
+        fs::remove_file(config_path).unwrap();
+    }
+
+    #[test]
+    fn test_merge_configuration_unsupported_ext() {
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("config.txt");
+        fs::write(&config_path, "api_key = \"txt_key\"").unwrap();
+
+        let cli = Cli {
+            api_key: Some("fallback".to_string()),
+            config: config_path.to_str().unwrap().to_string(),
+            json: false,
+            command: None,
+        };
+
+        let settings = merge_configuration(&cli).unwrap();
+        assert_eq!(settings.api_key, "fallback");
+        fs::remove_file(config_path).unwrap();
+    }
+
+    #[test]
+    fn test_merge_configuration_invalid_toml() {
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("invalid.toml");
+        fs::write(&config_path, "api_key = ").unwrap();
+
+        let cli = Cli {
+            api_key: None,
+            config: config_path.to_str().unwrap().to_string(),
+            json: false,
+            command: None,
+        };
+
+        let result = merge_configuration(&cli);
+        assert!(result.is_err());
+        fs::remove_file(config_path).unwrap();
     }
 }

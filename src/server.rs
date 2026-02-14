@@ -45,12 +45,7 @@ pub async fn run_http_server(args: HttpArgs, settings: Settings) -> Result<(), s
         sessions: Arc::new(RwLock::new(HashMap::new())),
     });
 
-    let app = Router::new()
-        .route("/", post(http_handler))
-        .route("/sse", get(sse_handler))
-        .route("/message", post(message_handler))
-        .layer(TraceLayer::new_for_http())
-        .with_state(app_state);
+    let app = create_router(app_state);
 
     let addr: SocketAddr = format!("{}:{}", args.host, args.port)
         .parse()
@@ -61,12 +56,34 @@ pub async fn run_http_server(args: HttpArgs, settings: Settings) -> Result<(), s
     axum::serve(listener, app).await
 }
 
+pub fn create_router(state: Arc<AppState>) -> Router {
+    Router::new()
+        .route("/", post(http_handler))
+        .route("/sse", get(sse_handler))
+        .route("/message", post(message_handler))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
+}
+
 use std::io::{self, BufRead, Write};
 
 pub async fn run_stdio_server(settings: Settings) -> Result<(), std::io::Error> {
     let stdin = io::stdin();
-    let mut reader = stdin.lock();
+    let stdout = io::stdout();
+    run_stdio_server_with_io(stdin.lock(), stdout.lock(), settings).await
+}
+
+pub async fn run_stdio_server_with_io<R, W>(
+    reader: R,
+    mut writer: W,
+    settings: Settings,
+) -> Result<(), std::io::Error>
+where
+    R: io::BufRead,
+    W: io::Write,
+{
     let mut line = String::new();
+    let mut reader = reader;
 
     info!("RescueGroups MCP Server running (Stdio)...");
 
@@ -91,8 +108,8 @@ pub async fn run_stdio_server(settings: Settings) -> Result<(), std::io::Error> 
 
         if let Some(id) = response.0 {
             let output = format_json_rpc_response(id, response.1);
-            println!("{}", output);
-            io::stdout().flush()?;
+            writeln!(writer, "{}", output)?;
+            writer.flush()?;
         }
     }
     Ok(())
@@ -288,6 +305,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_run_stdio_server_with_io() {
+        let input = serde_json::to_string(&json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "ping"
+        }))
+        .unwrap()
+            + "\n";
+        let mut reader = io::Cursor::new(input);
+        let mut writer = Vec::new();
+        let settings = get_test_settings();
+
+        let res = run_stdio_server_with_io(&mut reader, &mut writer, settings).await;
+        assert!(res.is_ok());
+        let output = String::from_utf8(writer).unwrap();
+        assert!(output.contains("jsonrpc"));
+    }
+
+    #[tokio::test]
+    async fn test_run_stdio_server_invalid_json() {
+        let input = "invalid\n";
+        let mut reader = io::Cursor::new(input);
+        let mut writer = Vec::new();
+        let settings = get_test_settings();
+
+        let res = run_stdio_server_with_io(&mut reader, &mut writer, settings).await;
+        assert!(res.is_ok());
+        assert!(writer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_http_handler_no_id() {
+        let state = Arc::new(AppState {
+            settings: get_test_settings(),
+            auth_token: None,
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+        });
+
+        let app = Router::new().route("/", post(http_handler)).with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::to_string(&json!({
+                            "jsonrpc": "2.0",
+                            "method": "notifications/initialized"
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
     async fn test_message_handler() {
         let state = Arc::new(AppState {
             settings: get_test_settings(),
@@ -327,5 +406,99 @@ mod tests {
         // Check if message was sent to SSE
         let msg = rx.recv().await.unwrap();
         assert!(msg.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_message_handler_no_id() {
+        let state = Arc::new(AppState {
+            settings: get_test_settings(),
+            auth_token: None,
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+        });
+
+        let app = Router::new()
+            .route("/message", post(message_handler))
+            .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/message?session_id=test")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::to_string(&json!({
+                            "jsonrpc": "2.0",
+                            "method": "notifications/initialized"
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+    }
+
+    #[tokio::test]
+    async fn test_message_handler_invalid_session() {
+        let state = Arc::new(AppState {
+            settings: get_test_settings(),
+            auth_token: None,
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+        });
+
+        let app = Router::new()
+            .route("/message", post(message_handler))
+            .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/message?session_id=invalid")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::to_string(&json!({
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "ping"
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+    }
+
+    #[tokio::test]
+    async fn test_create_router() {
+        let state = Arc::new(AppState {
+            settings: get_test_settings(),
+            auth_token: None,
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+        });
+        let _router = create_router(state);
+    }
+
+    #[tokio::test]
+    async fn test_run_http_server_startup() {
+        let settings = get_test_settings();
+        let args = HttpArgs {
+            host: "127.0.0.1".to_string(),
+            port: 0, // Let OS pick a free port
+            auth_token: None,
+        };
+
+        let handle = tokio::spawn(async move {
+            let _ = run_http_server(args, settings).await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        handle.abort();
     }
 }

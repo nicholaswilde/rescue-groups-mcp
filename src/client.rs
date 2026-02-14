@@ -814,4 +814,80 @@ mod tests {
         let result = list_org_animals(&settings, OrgIdArgs { org_id: "866".to_string() }).await.unwrap();
         assert!(result["data"].as_array().is_some());
     }
+
+    #[tokio::test]
+    async fn test_list_metadata_with_species() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+        let settings = get_test_settings(url);
+
+        let _mock_species = server
+            .mock("GET", "/public/animals/species")
+            .with_status(200)
+            .with_body(r#"{"data": [{"id": "1", "attributes": {"singular": "Dog", "plural": "Dogs"}}]}"#)
+            .create_async()
+            .await;
+
+        let _mock_metadata = server
+            .mock("GET", "/public/animals/species/1/colors")
+            .with_status(200)
+            .with_body(r#"{"data": ["Brown"]}"#)
+            .create_async()
+            .await;
+
+        let args = MetadataArgs {
+            metadata_type: "colors".to_string(),
+            species: Some("dog".to_string()),
+        };
+
+        let result = list_metadata(&settings, args).await.unwrap();
+        assert_eq!(result["data"][0], "Brown");
+    }
+
+    #[tokio::test]
+    async fn test_compare_animals_with_errors() {
+        let mut server = mockito::Server::new_async().await;
+        let settings = get_test_settings(server.url());
+
+        let _mock1 = server
+            .mock("GET", "/public/animals/1")
+            .with_status(200)
+            .with_body(r#"{"data": {"id": "1", "attributes": {"name": "Buddy"}}}"#)
+            .create_async()
+            .await;
+
+        let _mock2 = server
+            .mock("GET", "/public/animals/error")
+            .with_status(500)
+            .create_async()
+            .await;
+
+        let args = CompareArgs {
+            animal_ids: vec!["1".to_string(), "error".to_string()],
+        };
+
+        let result = compare_animals(&settings, args).await.unwrap();
+        assert_eq!(result["data"].as_array().unwrap().len(), 1);
+        assert_eq!(result["errors"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limiting_call() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+        let mut settings = get_test_settings(url);
+        // High rate to avoid slow tests
+        settings.limiter = Arc::new(RateLimiter::direct(Quota::per_second(
+            NonZeroU32::new(100).unwrap(),
+        )));
+
+        let _mock = server
+            .mock("GET", "/public/animals/species")
+            .with_status(200)
+            .with_body(r#"{"data": []}"#)
+            .create_async()
+            .await;
+
+        list_species(&settings).await.unwrap();
+    }
 }

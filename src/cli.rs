@@ -198,6 +198,87 @@ mod tests {
     }
 
     #[test]
+    fn test_server_command() {
+        let args = vec!["prog", "server"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Server)));
+    }
+
+    #[test]
+    fn test_http_command() {
+        let args = vec!["prog", "http", "--port", "8080", "--host", "127.0.0.1"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Some(Commands::Http(http_args)) => {
+                assert_eq!(http_args.port, 8080);
+                assert_eq!(http_args.host, "127.0.0.1");
+            }
+            _ => panic!("Expected Http command"),
+        }
+    }
+
+    #[test]
+    fn test_compare_command() {
+        let args = vec!["prog", "compare", "--animal-ids", "1,2,3"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Some(Commands::Compare(compare_args)) => {
+                assert_eq!(compare_args.animal_ids, vec!["1", "2", "3"]);
+            }
+            _ => panic!("Expected Compare command"),
+        }
+    }
+
+    #[test]
+    fn test_list_breeds_command() {
+        let args = vec!["prog", "list-breeds", "--species", "dog"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Some(Commands::ListBreeds(species_args)) => {
+                assert_eq!(species_args.species, "dog");
+            }
+            _ => panic!("Expected ListBreeds command"),
+        }
+    }
+
+    #[test]
+    fn test_get_breed_command() {
+        let args = vec!["prog", "get-breed", "--breed-id", "123"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Some(Commands::GetBreed(breed_args)) => {
+                assert_eq!(breed_args.breed_id, "123");
+            }
+            _ => panic!("Expected GetBreed command"),
+        }
+    }
+
+    #[test]
+    fn test_list_metadata_command() {
+        let args = vec!["prog", "list-metadata", "--metadata-type", "colors", "--species", "cats"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Some(Commands::ListMetadata(metadata_args)) => {
+                assert_eq!(metadata_args.metadata_type, "colors");
+                assert_eq!(metadata_args.species, Some("cats".to_string()));
+            }
+            _ => panic!("Expected ListMetadata command"),
+        }
+    }
+
+    #[test]
+    fn test_generate_command() {
+        let args = vec!["prog", "generate", "--shell", "bash"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        match cli.command {
+            Some(Commands::Generate(gen_args)) => {
+                assert!(gen_args.shell.is_some());
+            }
+            _ => panic!("Expected Generate command"),
+        }
+    }
+
+    #[test]
     fn test_search_events_removed() {
         let args = vec!["prog", "search-events"];
         let result = Cli::try_parse_from(args);

@@ -528,4 +528,29 @@ mod tests {
         assert!(output.contains("Labrador"));
         assert!(output.contains("Poodle"));
     }
+
+    #[test]
+    fn test_format_comparison_table_empty() {
+        let data = json!({"data": []});
+        let output = format_comparison_table(&data).unwrap();
+        assert_eq!(output, "No animals to compare.");
+    }
+
+    #[test]
+    fn test_print_output_json() {
+        let res = Ok(json!({"foo": "bar"}));
+        print_output(res, true, |_| Ok("text".to_string()));
+    }
+
+    #[test]
+    fn test_print_output_error() {
+        let res: Result<Value, AppError> = Err(AppError::NotFound);
+        print_output(res, false, |_| Ok("text".to_string()));
+    }
+
+    #[test]
+    fn test_print_output_formatter_error() {
+        let res = Ok(json!({}));
+        print_output(res, false, |_| Err(AppError::NotFound));
+    }
 }

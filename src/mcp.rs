@@ -1028,6 +1028,85 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_process_mcp_request_tools_list_lazy() {
+        let mut settings = get_test_settings();
+        settings.lazy = true;
+        let req = JsonRpcRequest {
+            _jsonrpc: "2.0".to_string(),
+            id: Some(json!(1)),
+            method: "tools/list".to_string(),
+            params: None,
+        };
+
+        let (_, result) = process_mcp_request(req, &settings).await;
+        let res = result.unwrap();
+        let tools = res["tools"].as_array().unwrap();
+        assert!(tools.len() < get_all_tool_definitions().len());
+    }
+
+    #[tokio::test]
+    async fn test_process_mcp_request_tools_call_missing_params() {
+        let settings = get_test_settings();
+        let req = JsonRpcRequest {
+            _jsonrpc: "2.0".to_string(),
+            id: Some(json!(1)),
+            method: "tools/call".to_string(),
+            params: None,
+        };
+
+        let (_, result) = process_mcp_request(req, &settings).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err()["code"], -32602);
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_not_found_branches() {
+        let mut server = mockito::Server::new_async().await;
+        let mut settings = get_test_settings();
+        settings.base_url = server.url();
+
+        let _mock = server.mock("GET", mockito::Matcher::Any).with_status(200).with_body(r#"{"data": []}"#).create_async().await;
+
+        // get_breed None
+        let res = handle_tool_call("get_breed", None, &settings).await;
+        assert!(matches!(res, Err(AppError::NotFound)));
+
+        // get_animal_details None
+        let res = handle_tool_call("get_animal_details", None, &settings).await;
+        assert!(matches!(res, Err(AppError::NotFound)));
+
+        // get_organization_details None
+        let res = handle_tool_call("get_organization_details", None, &settings).await;
+        assert!(matches!(res, Err(AppError::NotFound)));
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_unknown_tool() {
+        let settings = get_test_settings();
+        let res = handle_tool_call("unknown_tool", None, &settings).await;
+        assert!(matches!(res, Err(AppError::NotFound)));
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_list_animals() {
+        let mut server = mockito::Server::new_async().await;
+        let mut settings = get_test_settings();
+        settings.base_url = server.url();
+
+        let _mock = server.mock("GET", "/public/animals").with_status(200).with_body(r#"{"data": []}"#).create_async().await;
+
+        let res = handle_tool_call("list_animals", None, &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_list_metadata_types() {
+        let settings = get_test_settings();
+        let res = handle_tool_call("list_metadata_types", None, &settings).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
     async fn test_process_mcp_request_method_not_found() {
         let settings = get_test_settings();
         let req = JsonRpcRequest {

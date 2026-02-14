@@ -52,7 +52,7 @@ You will need to request an [API key][1] from the group.
 
 ## :bar_chart: Code Coverage
 
-This project uses `cargo-llvm-cov` for code coverage. Coverage reports are manually uploaded to Coveralls.
+This project uses `cargo-llvm-cov` for code coverage. We aim for 100% line coverage (minimum 98% enforced). Coverage reports are manually uploaded to Coveralls.
 
 ### Prerequisites
 

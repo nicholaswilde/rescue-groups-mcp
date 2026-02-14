@@ -23,12 +23,12 @@ tasks:
   coverage:
     desc: Run tests and generate coverage report (stdout summary)
     cmds:
-      - cargo llvm-cov --all-features --workspace --summary-only --fail-under-lines 90
+      - cargo llvm-cov --all-features --workspace --summary-only --fail-under-lines 98
 
   coverage:report:
     desc: Run tests and generate LCOV coverage report (for Coveralls)
     cmds:
-      - cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info --fail-under-lines 90
+      - cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info --fail-under-lines 98
 
   test:coverage:
     desc: Run tests and generate HTML coverage report

@@ -528,4 +528,56 @@ mod tests {
         .await;
         assert!(res.is_ok());
     }
+
+    #[tokio::test]
+    async fn test_handle_command_server_http() {
+        let settings = get_test_settings("http://localhost".to_string());
+        let res = handle_command(Commands::Server, &settings, false).await;
+        assert!(res.is_ok());
+
+        let res = handle_command(
+            Commands::Http(crate::cli::HttpArgs {
+                host: "localhost".to_string(),
+                port: 3000,
+                auth_token: None,
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_generate_man() {
+        let settings = get_test_settings("http://localhost".to_string());
+        let temp_dir = std::env::temp_dir().join("rescue-groups-mcp-man");
+        let res = handle_command(
+            Commands::Generate(crate::cli::GenerateArgs {
+                shell: None,
+                man: Some(temp_dir.to_str().unwrap().to_string()),
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+        assert!(temp_dir.join("rescue-groups-mcp.1").exists());
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_generate_none() {
+        let settings = get_test_settings("http://localhost".to_string());
+        let res = handle_command(
+            Commands::Generate(crate::cli::GenerateArgs {
+                shell: None,
+                man: None,
+            }),
+            &settings,
+            false,
+        )
+        .await;
+        assert!(res.is_ok());
+    }
 }
