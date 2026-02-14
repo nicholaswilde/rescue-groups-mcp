@@ -34,3 +34,4 @@ config.yml
 # Keep the example file
 !config.toml.example
 .env
+lcov.info
