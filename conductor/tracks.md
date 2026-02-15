@@ -36,3 +36,8 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 - [x] **Track: More Metadata Tools**
   *Link: [./tracks/more_metadata_tools_20260120/](./tracks/more_metadata_tools_20260120/)*
+
+---
+
+- [ ] **Track: MCP Optimization & Polymorphic Tools**
+  *Link: [./tracks/mcp_optimization_20260215/](./tracks/mcp_optimization_20260215/)*
