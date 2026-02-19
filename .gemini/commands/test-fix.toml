@@ -16,6 +16,12 @@ You are a senior Rust engineer tasked with ensuring the project passes its CI ch
 4.  **Verify**: Re-run `task test:ci` after fixes to ensure everything passes.
 5.  **Report**: provide a concise summary of what was fixed.
 
+### Context Information:
+- **Project Structure**: !{ ls -F }
+- **Git Status**: !{ git status --short }
+- **Recent Failures**: !{ git log -n 1 --pretty=format:"%s" }
+- **Lint Status (Clippy)**: !{ task clippy 2>&1 | tail -n 5 }
+
 ### Execution:
 Please run `task test:ci` now and proceed with fixing any issues you encounter.
 '''

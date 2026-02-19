@@ -5,6 +5,7 @@ You are a systems engineer ensuring cross-platform build stability.
 
 ### Target Architecture:
 The target architecture is: {{args}} (if empty, default to 'amd64').
+Supported targets: amd64, arm64, armv7, local.
 
 ### Workflow:
 1.  **Execute**: Run the build command for the target architecture (e.g., `task build:amd64` or `task build:arm64`).
@@ -15,6 +16,10 @@ The target architecture is: {{args}} (if empty, default to 'amd64').
 3.  **Iterate**: Re-run the build until it completes successfully.
 4.  **Verification**: Once the build passes, execute the `/test-fix` command to ensure the overall project integrity (formatting, linting, and tests).
 5.  **Completion**: Confirm the successful build and the results of the subsequent test phase.
+
+### Context Information:
+- **Available Tasks**: !{ task --list-all | grep build: }
+- **Git Status**: !{ git status --short }
 
 ### Execution:
 Please determine the correct target architecture from the provided arguments (defaulting to `amd64` if none) and run the corresponding task build command (e.g., `task build:amd64`). Proceed with fixing any issues you encounter.
