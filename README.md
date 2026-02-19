@@ -5,7 +5,7 @@
 [![ci](https://img.shields.io/github/actions/workflow/status/nicholaswilde/rescue-groups-mcp/ci.yml?label=ci&style=for-the-badge&branch=main&logo=github-actions)](https://github.com/nicholaswilde/rescue-groups-mcp/actions/workflows/ci.yml)
 
 > [!WARNING]
-> This project is currently in active development (v0.x.x) and is **not production-ready**. Features may change, and breaking changes may occur without notice.
+> This project is currently in active development (v0.4.0) and is **not production-ready**. Features may change, and breaking changes may occur without notice.
 
 An [MCP server](https://modelcontextprotocol.io/docs/getting-started/intro) to interface with [RescueGroups][3] written in Rust.
 

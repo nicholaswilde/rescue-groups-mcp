@@ -1,0 +1,41 @@
+description = "Automates the versioning, tagging, and deployment process for the project."
+
+prompt = '''
+You are a release automation assistant. Your task is to perform a project release.
+
+### Workflow Summary:
+1.  **Validation**: Verify clean git state and run all project tests (`task test`).
+2.  **Versioning**: Extract current version, increment the patch, and update `Cargo.toml`.
+3.  **Synchronization**: Update `Cargo.lock` and project documentation (`README.md`).
+4.  **Verification**: Confirm changes and generate release notes.
+5.  **Persistence**: Commit, tag, and push atomically.
+
+### Follow these steps exactly:
+
+1.  **Pre-check**: Ensure the working directory is clean (excluding this release command). Run `git status --porcelain`. If there are uncommitted changes in tracked files, stop and ask for a commit first.
+2.  **Test**: Run `task test` to ensure the project is in a stable state. If any test fails, stop and report.
+3.  **Extract Version**: Read `Cargo.toml` to get the current version (`v$VERSION`).
+4.  **Calculate New Version**: Increment the patch version (e.g., `0.4.0` -> `0.4.1`).
+5.  **Update Cargo.toml**: Update the `version` field in `Cargo.toml`.
+6.  **Sync Cargo.lock**: Run `cargo check` to update the lockfile.
+7.  **Update README.md**: Update the version string in the `[!WARNING]` section (e.g., `(v$VERSION)` -> `(v$NEW_VERSION)`). Use a targeted replacement like `sed -i "s/(v$VERSION)/(v$NEW_VERSION)/g" README.md`.
+8.  **Git Operations**:
+    -   `git pull --rebase` to ensure we are on top of the remote.
+    -   Stage `Cargo.toml`, `Cargo.lock`, and `README.md`.
+    -   Commit with message `chore: bump version to <new_version>`.
+    -   Create an annotated tag `v<new_version>` with message `<new_version>`.
+    -   Push atomically: `git push --atomic origin main v<new_version>`.
+9.  **Release Notes**: Remind the user to run `/release-summary` to generate the GitHub release body.
+
+**Important**:
+- Use `git commit -m` and `git tag -a -m` to avoid interactive editors.
+- Use atomic pushes to ensure the tag and commit are pushed together.
+- If any step fails, stop immediately and report the error.
+
+**Context Information**:
+- **Current Version**: !{ grep '^version =' Cargo.toml | sed -E 's/version = "(.*)"/\1/' }
+- **New Calculated Version**: !{ VERSION=$(grep '^version =' Cargo.toml | sed -E 's/version = "(.*)"/\1/'); IFS='.' read -r major minor patch <<< "$VERSION"; NEW_PATCH=$((patch + 1)); echo "$major.$minor.$NEW_PATCH" }
+- **Git Status**: !{ git status --porcelain }
+
+Please execute the release now.
+'''
